@@ -9,21 +9,68 @@ const DB_FILE = path.join(DATA_DIR, 'data.json');
 const GARAGE = 12, MAX = 20, BIG = 1e40;
 const SESSION_TTL = 60 * 24 * 3600 * 1000;
 
-/* ---------- хранилище (JSON-файл, запись раз в 2 сек) ---------- */
+/* ---------- хранилище ----------
+   Если заданы UPSTASH_REDIS_REST_URL и UPSTASH_REDIS_REST_TOKEN — данные хранятся в Upstash Redis
+   (переживают перезапуск и сон сервера). Иначе — в файле data.json (на бесплатном Render он стирается). */
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL, REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const useRedis = !!(REDIS_URL && REDIS_TOKEN);
 let db = { users: {}, sessions: {} };
-try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {}
-db.users = db.users || {}; db.sessions = db.sessions || {};
+let urgent = false, lastFlush = Date.now(), flushing = false;
+const persisted = { u: {}, s: {} };
+const save = (now) => { if (now) urgent = true; dirty = true; };
 let dirty = false;
-const save = () => { dirty = true; };
-function flush() {
-  if (!dirty) return; dirty = false;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db));
-  fs.renameSync(tmp, DB_FILE);
+
+async function redis(cmds) {
+  const r = await fetch(REDIS_URL.replace(/\/$/, '') + '/pipeline', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + REDIS_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(cmds)
+  });
+  if (!r.ok) throw new Error('Redis HTTP ' + r.status);
+  const out = await r.json();
+  const bad = out.find(x => x && x.error);
+  if (bad) throw new Error('Redis: ' + bad.error);
+  return out;
 }
-setInterval(flush, 2000);
-['SIGINT', 'SIGTERM'].forEach(s => process.on(s, () => { flush(); process.exit(0); }));
+const pairs = flat => { const o = {}; for (let i = 0; i + 1 < (flat || []).length; i += 2) o[flat[i]] = flat[i + 1]; return o; };
+
+async function load() {
+  if (useRedis) {
+    const [u, s] = await redis([['HGETALL', 'cm:users'], ['HGETALL', 'cm:sessions']]);
+    const U = pairs(u.result), S = pairs(s.result);
+    for (const k in U) { try { db.users[k] = JSON.parse(U[k]); persisted.u[k] = U[k]; } catch (e) {} }
+    for (const t in S) { try { db.sessions[t] = JSON.parse(S[t]); persisted.s[t] = S[t]; } catch (e) {} }
+    console.log('Хранилище: Upstash Redis, игроков: ' + Object.keys(db.users).length);
+  } else {
+    try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {}
+    db.users = db.users || {}; db.sessions = db.sessions || {};
+    console.log('Хранилище: файл data.json (на бесплатном Render данные могут пропадать!)');
+  }
+  for (const t in db.sessions) if (Date.now() - db.sessions[t].t > SESSION_TTL) delete db.sessions[t];
+}
+
+async function flush() {
+  if (flushing) return; flushing = true;
+  try {
+    if (useRedis) {
+      const cmds = [], apply = [];
+      for (const k in db.users) { const j = JSON.stringify(db.users[k]); if (persisted.u[k] !== j) { cmds.push(['HSET', 'cm:users', k, j]); apply.push(() => persisted.u[k] = j); } }
+      for (const t in db.sessions) { const j = JSON.stringify(db.sessions[t]); if (persisted.s[t] !== j) { cmds.push(['HSET', 'cm:sessions', t, j]); apply.push(() => persisted.s[t] = j); } }
+      for (const t in persisted.s) if (!db.sessions[t]) { cmds.push(['HDEL', 'cm:sessions', t]); apply.push(() => delete persisted.s[t]); }
+      if (cmds.length) { await redis(cmds); apply.forEach(f => f()); }
+    } else if (dirty) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      const tmp = DB_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(db)); fs.renameSync(tmp, DB_FILE);
+    }
+    dirty = false; urgent = false; lastFlush = Date.now();
+  } catch (e) { console.error('Ошибка сохранения:', e.message); }
+  flushing = false;
+}
+// Redis: раз в 30 сек (или сразу при регистрации/входе); файл: раз в 2 сек
+setInterval(() => { if (dirty && (!useRedis || urgent || Date.now() - lastFlush > 30000)) flush(); }, 2000);
+['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, async () => {
+  setTimeout(() => process.exit(0), 8000).unref();
+  dirty = true; await flush(); process.exit(0);
+}));
 
 /* ---------- утилиты ---------- */
 const err = (m, s) => Object.assign(new Error(m), { status: s });
@@ -78,7 +125,7 @@ const admin = req => { const s = need(req); if (!s.u.isAdmin) throw err('Нет 
 const profile = (k, extra) => Object.assign({ nick: db.users[k].nick, isAdmin: !!db.users[k].isAdmin, state: db.users[k].state, grants: db.users[k].grants }, extra);
 function login(k) {
   const token = newToken();
-  db.sessions[token] = { k, t: Date.now() }; save();
+  db.sessions[token] = { k, t: Date.now() }; save(true);
   return profile(k, { token });
 }
 
@@ -94,7 +141,7 @@ function board(sort, me) {
 /* ---------- маршруты ---------- */
 function route(req, p, q, b, ip) {
   const M = req.method;
-  if (p === '/api/health') return { ok: true };
+  if (p === '/api/health') return { ok: true, storage: useRedis ? 'redis' : 'file' };
 
   if (p === '/api/register' && M === 'POST') {
     if (limited(ip)) throw err('Слишком много попыток, подождите минуту', 429);
@@ -139,7 +186,7 @@ function route(req, p, q, b, ip) {
     if (coins) { u.grants.push({ id: rid(), type: 'coins', amount: coins }); n++; }
     if (car) for (let i = 0; i < cnt; i++) { u.grants.push({ id: rid(), type: 'car', level: car }); n++; }
     if (!n) throw err('Нечего выдавать', 400);
-    save(); return { ok: true, nick: u.nick, online: u === s.u };
+    save(true); return { ok: true, nick: u.nick, online: u === s.u };
   }
   throw err('Неизвестный метод', 404);
 }
@@ -149,7 +196,7 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const send = (res, code, obj, type = 'application/json; charset=utf-8') =>
   { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...CORS }); res.end(typeof obj === 'string' || Buffer.isBuffer(obj) ? obj : JSON.stringify(obj)); };
 
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), p = url.pathname;
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
 
@@ -173,4 +220,6 @@ http.createServer((req, res) => {
       if (!e.status) console.error(e);
     }
   });
-}).listen(PORT, () => console.log('Car Merge Pro: http://localhost:' + PORT));
+});
+load().then(() => server.listen(PORT, () => console.log('Car Merge Pro: http://localhost:' + PORT)))
+  .catch(e => { console.error('Не удалось загрузить данные:', e.message); process.exit(1); });
