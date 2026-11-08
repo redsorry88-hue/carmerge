@@ -12,8 +12,10 @@ const SESSION_TTL = 60 * 24 * 3600 * 1000;
 /* ---------- хранилище ----------
    Если заданы UPSTASH_REDIS_REST_URL и UPSTASH_REDIS_REST_TOKEN — данные хранятся в Upstash Redis
    (переживают перезапуск и сон сервера). Иначе — в файле data.json (на бесплатном Render он стирается). */
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL, REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const useRedis = !!(REDIS_URL && REDIS_TOKEN);
+// чистим ключи от кавычек, пробелов и посторонних (не ASCII) символов, которые могли попасть при копировании
+const clean = v => String(v || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+const REDIS_URL = clean(process.env.UPSTASH_REDIS_REST_URL), REDIS_TOKEN = clean(process.env.UPSTASH_REDIS_REST_TOKEN);
+let useRedis = !!(REDIS_URL && REDIS_TOKEN), redisError = '';
 let db = { users: {}, sessions: {} };
 let urgent = false, lastFlush = Date.now(), flushing = false;
 const persisted = { u: {}, s: {} };
@@ -34,11 +36,18 @@ const pairs = flat => { const o = {}; for (let i = 0; i + 1 < (flat || []).lengt
 
 async function load() {
   if (useRedis) {
-    const [u, s] = await redis([['HGETALL', 'cm:users'], ['HGETALL', 'cm:sessions']]);
-    const U = pairs(u.result), S = pairs(s.result);
-    for (const k in U) { try { db.users[k] = JSON.parse(U[k]); persisted.u[k] = U[k]; } catch (e) {} }
-    for (const t in S) { try { db.sessions[t] = JSON.parse(S[t]); persisted.s[t] = S[t]; } catch (e) {} }
-    console.log('Хранилище: Upstash Redis, игроков: ' + Object.keys(db.users).length);
+    try {
+      const [u, s] = await redis([['HGETALL', 'cm:users'], ['HGETALL', 'cm:sessions']]);
+      const U = pairs(u.result), S = pairs(s.result);
+      for (const k in U) { try { db.users[k] = JSON.parse(U[k]); persisted.u[k] = U[k]; } catch (e) {} }
+      for (const t in S) { try { db.sessions[t] = JSON.parse(S[t]); persisted.s[t] = S[t]; } catch (e) {} }
+      console.log('Хранилище: Upstash Redis, игроков: ' + Object.keys(db.users).length);
+    } catch (e) {
+      redisError = e.message; useRedis = false;
+      console.error('Redis недоступен (' + e.message + '). Работаю с файлом, данные могут пропасть при перезапуске!');
+      try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e2) {}
+      db.users = db.users || {}; db.sessions = db.sessions || {};
+    }
   } else {
     try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {}
     db.users = db.users || {}; db.sessions = db.sessions || {};
@@ -141,7 +150,7 @@ function board(sort, me) {
 /* ---------- маршруты ---------- */
 function route(req, p, q, b, ip) {
   const M = req.method;
-  if (p === '/api/health') return { ok: true, storage: useRedis ? 'redis' : 'file' };
+  if (p === '/api/health') return { ok: true, storage: useRedis ? 'redis' : 'file', ...(redisError ? { redisError } : {}) };
 
   if (p === '/api/register' && M === 'POST') {
     if (limited(ip)) throw err('Слишком много попыток, подождите минуту', 429);
