@@ -99,7 +99,7 @@ setInterval(() => { const n = Date.now(); for (const [k, v] of hits) if (n - v.t
 /* ---------- состояние игрока ---------- */
 const newState = () => {
   const g = Array(GARAGE).fill(0); g[0] = 1;
-  return { money: 100, coins: 0, garage: g, bought: 0, upg: { inc: 0, spawn: 0, cheap: 0 }, perm: { mult: 0, auto: 0 }, boostUntil: 0, maxLevel: 1, applied: [] };
+  return { money: 100, coins: 0, garage: g, bought: 0, upg: { inc: 0, spawn: 0, cheap: 0 }, perm: { mult: 0, auto: 0 }, shop: { boost: 0, car: 0 }, boostUntil: 0, maxLevel: 1, applied: [] };
 };
 const num = (v, max = BIG) => { v = +v; return Number.isFinite(v) && v > 0 ? Math.min(v, max) : 0; };
 const int = (v, max) => Math.floor(num(v, max));
@@ -112,6 +112,7 @@ function cleanState(s, old) {
     money: num(s.money), coins: num(s.coins), garage, bought: int(s.bought, 1e6),
     upg: { inc: int(u.inc, 100), spawn: int(u.spawn, 5), cheap: int(u.cheap, 10) },
     perm: { mult: int(p.mult, 1000), auto: int(p.auto, 1) },
+    shop: { boost: int((s.shop || {}).boost, 1000), car: int((s.shop || {}).car, 1000) },
     boostUntil: num(s.boostUntil, 8e15),
     maxLevel: Math.max(1, int(s.maxLevel, MAX), ...garage),
     applied: (Array.isArray(s.applied) ? s.applied : []).map(String).slice(-200)

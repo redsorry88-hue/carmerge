@@ -176,6 +176,13 @@ const buyCost=()=>Math.min(1e15,Math.floor(25*Math.pow(1.13,S.bought)*(1-.05*S.u
 const spawnLvl=()=>1+S.upg.spawn;
 const freeSlot=()=>S.garage.indexOf(0);
 const RATE=10000; // $ за 1 коин
+/* МАГАЗИН ЗА КОИНЫ: цены (в коинах) и лимиты покупок. Меняйте числа здесь. */
+const SHOP={
+  boost:{price:3,max:50},          // Буст ×2 на 60 секунд
+  car:{price:10,max:5},            // Премиум-авто (ур. 6)
+  inc:{price:15,step:10,max:10},   // Постоянный доход +25%: цена = price + step × (уже куплено)
+  auto:{price:30,max:1}            // Авто-слияние
+};
 
 const UPG=[
   {k:'inc',e:'⚙️',n:'Мощность двигателей',d:l=>`+15% к доходу (сейчас +${l*15}%)`,max:100,cost:l=>Math.floor(100*Math.pow(1.7,l))},
@@ -205,7 +212,7 @@ async function apiLocal(path,method='GET',body){
     if(String(b.password||'').length<4)throw lerr('Пароль: минимум 4 символа',400);
     if(d.users[k])throw lerr('Этот ник уже занят',409);
     const g=Array(GARAGE).fill(0);g[0]=1;
-    d.users[k]={nick,pw:lhash(b.password),isAdmin:!Object.keys(d.users).length,grants:[],state:{money:100,coins:0,garage:g,bought:0,upg:{inc:0,spawn:0,cheap:0},perm:{mult:0,auto:0},boostUntil:0,maxLevel:1,applied:[]}};
+    d.users[k]={nick,pw:lhash(b.password),isAdmin:!Object.keys(d.users).length,grants:[],state:{money:100,coins:0,garage:g,bought:0,upg:{inc:0,spawn:0,cheap:0},perm:{mult:0,auto:0},shop:{boost:0,car:0},boostUntil:0,maxLevel:1,applied:[]}};
     save();return prof(k,{token:'t_'+k});
   }
   if(p==='/api/login'){
@@ -310,7 +317,7 @@ async function sync(){
 /* ---------- старт ---------- */
 let started=false;
 function start(p){
-  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;
+  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;S.shop=S.shop||{boost:0,car:0};
   $('auth').classList.remove('show');$('app').hidden=false;$('nick').textContent=p.nick;
   sel=null;renderGarage();renderStats();applyGrants(p.grants);
   if(!started){started=true;loop();setInterval(sync,4000);requestAnimationFrame(draw)}
@@ -500,13 +507,14 @@ function renderSheet(){
   }else if(sheet==='coin'){
     T.textContent='💎 Магазин за коины';
     const items=[
-      {e:'🚀',n:'Буст ×2 на 60 секунд',d:'Время суммируется',c:2,ok:true,f:()=>{S.boostUntil=Math.max(S.boostUntil,Date.now())+60000}},
-      {e:'🏎️',n:'Премиум-авто (ур. 6)',d:'Сразу в гараж',c:8,ok:freeSlot()>=0,f:()=>{const i=freeSlot();S.garage[i]=6;S.maxLevel=Math.max(S.maxLevel,6)}},
-      {e:'📈',n:`Постоянный доход +25% (${S.perm.mult}/10)`,d:'Навсегда, суммируется',c:20+15*S.perm.mult,ok:S.perm.mult<10,f:()=>{S.perm.mult++}},
-      {e:'🤖',n:'Авто-слияние',d:S.perm.auto?'Куплено':'Сам объединяет одинаковые авто',c:40,ok:!S.perm.auto,f:()=>{S.perm.auto=1}}
+      {e:'🚀',n:'Буст ×2 на 60 секунд',d:'Время суммируется',c:SHOP.boost.price,have:S.shop.boost,max:SHOP.boost.max,f:()=>{S.boostUntil=Math.max(S.boostUntil,Date.now())+60000;S.shop.boost++}},
+      {e:'🏎️',n:'Премиум-авто (ур. 6)',d:freeSlot()>=0?'Сразу в гараж':'Нет свободного места в гараже',c:SHOP.car.price,have:S.shop.car,max:SHOP.car.max,room:freeSlot()>=0,f:()=>{const i=freeSlot();S.garage[i]=6;S.maxLevel=Math.max(S.maxLevel,6);S.shop.car++}},
+      {e:'📈',n:'Постоянный доход +25%',d:'Навсегда, суммируется',c:SHOP.inc.price+SHOP.inc.step*S.perm.mult,have:S.perm.mult,max:SHOP.inc.max,f:()=>{S.perm.mult++}},
+      {e:'🤖',n:'Авто-слияние',d:'Сам объединяет одинаковые авто',c:SHOP.auto.price,have:S.perm.auto,max:SHOP.auto.max,f:()=>{S.perm.auto=1}}
     ];
-    B.innerHTML=items.map((it,i)=>`<div class="row"><span class="e">${it.e}</span><div class="t"><b>${it.n}</b><small>${it.d}</small></div><button class="btn" data-i="${i}" ${(!it.ok||S.coins<it.c)?'disabled':''}>${it.ok?it.c+' 🪙':'—'}</button></div>`).join('');
-    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.i];if(!it.ok||S.coins<it.c)return;S.coins-=it.c;it.f();renderGarage();renderSheet()});
+    const can=it=>it.have<it.max&&it.room!==false&&S.coins>=it.c;
+    B.innerHTML=items.map((it,i)=>{const left=it.max-it.have,done=left<=0;return`<div class="row"><span class="e">${it.e}</span><div class="t"><b>${it.n}</b><small>${it.d}</small><small>Куплено: <b>${it.have}</b> из ${it.max} · ${done?'лимит достигнут':'можно купить ещё '+left}</small></div><button class="btn" data-i="${i}" ${can(it)?'':'disabled'}>${done?'Макс':it.c+' 🪙'}</button></div>`}).join('');
+    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.i];if(!can(it))return;S.coins-=it.c;it.f();renderGarage();renderSheet()});
   }else if(sheet==='upg'){
     T.textContent='🛒 Магазин Улучшений';
     B.innerHTML=UPG.map((u,i)=>{const l=S.upg[u.k],m=l>=u.max,c=u.cost(l);
@@ -522,7 +530,7 @@ function renderSheet(){
     T.textContent='⚠️ Сбросить весь прогресс?';
     B.innerHTML=`<p class="hint" style="font-size:14px">Вы потеряете все купленные машины, баланс и коины.</p><div class="two"><button class="btn alt" id="rNo">Отмена</button><button class="btn danger" id="rYes">Сбросить</button></div>`;
     $('rNo').onclick=closeSheet;
-    $('rYes').onclick=()=>{const ap=S.applied;const g=Array(GARAGE).fill(0);g[0]=1;S={money:100,coins:0,garage:g,bought:0,upg:{inc:0,spawn:0,cheap:0},perm:{mult:0,auto:0},boostUntil:0,maxLevel:1,applied:ap};sel=null;renderGarage();sync();closeSheet()};
+    $('rYes').onclick=()=>{const ap=S.applied;const g=Array(GARAGE).fill(0);g[0]=1;S={money:100,coins:0,garage:g,bought:0,upg:{inc:0,spawn:0,cheap:0},perm:{mult:0,auto:0},shop:{boost:0,car:0},boostUntil:0,maxLevel:1,applied:ap};sel=null;renderGarage();sync();closeSheet()};
   }else if(sheet==='admin'){renderAdmin(false)}
 }
 $('reset').onclick=()=>openSheet('reset');
