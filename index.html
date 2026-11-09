@@ -139,7 +139,7 @@ summary{cursor:pointer;padding:4px 0}
     <button data-s="lb"><span>🏆</span><b>Мировой рейтинг</b><small>Топ игроков по всему миру</small></button>
     <button data-s="exch"><span>💱</span><b>Обмен валюты</b><small>Получайте коины за доллары</small></button>
     <button data-s="coin"><span>💎</span><b>Магазин за коины</b><small>Премиум-улучшения и бусты</small></button>
-    <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 20 моделей автопарка</small></button>
+    <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 30 моделей автопарка</small></button>
     <button data-s="upg"><span>🛒</span><b>Магазин Улучшений</b><small>Прокачивайте автопарк</small></button>
   </div>
   <button class="reset" id="reset">Сбросить прогресс</button>
@@ -150,10 +150,12 @@ summary{cursor:pointer;padding:4px 0}
 
 <script>
 'use strict';
-const GARAGE=12, MAX=20;
-const NAMES=['Neon Hatch','Street Sprout','Pixel Coupe','Volt Sedan','Chrome Rider','Pulse GT','Night Drifter','Turbo Wraith','Magenta Viper','Cyber Roadster','Plasma Racer','Quantum GT','Ion Phantom','Hyper Blade','Nova Striker','Apex Specter','Neutron R','Photon Ghost','Void Sovereign','Aurora Omega'];
+const GARAGE=12, MAX=30;
+const INCOME_MULT=0.5; // множитель дохода машин (было 1) — меньше число = меньше доход
+const NAMES=['Neon Hatch','Street Sprout','Pixel Coupe','Volt Sedan','Chrome Rider','Pulse GT','Night Drifter','Turbo Wraith','Magenta Viper','Cyber Roadster','Plasma Racer','Quantum GT','Ion Phantom','Hyper Blade','Nova Striker','Apex Specter','Neutron R','Photon Ghost','Void Sovereign','Aurora Omega','Solar Titan','Crystal Phantom','Obsidian Fang','Eclipse Vanguard','Starlight Reaper','Chrono Drifter','Singularity X','Cosmic Leviathan','Infinity Prime','Genesis Zero'];
 const ICONS=['🚗','🚕','🚙','🚓','🚐','🛻','🚑','🚒','🚚','🏎️'];
-const icon=l=>ICONS[(l-1)%ICONS.length];
+const ICONS2=['🚘','🚖','🚔','🚍','🚌','🚎','🚛','🚜','🛺','🏍️'];
+const icon=l=>l>20?ICONS2[(l-21)%ICONS2.length]:ICONS[(l-1)%ICONS.length];
 const hue=l=>(l*37)%360;
 const color=l=>`hsl(${(l*18+300)%360} 100% 62%)`;
 const $=id=>document.getElementById(id);
@@ -168,7 +170,7 @@ function fmt(n){
 
 /* ---------- состояние / экономика ---------- */
 let S=null,user=null,token=localStorage.getItem('cmp_token'),sel=null;
-const baseInc=l=>Math.pow(2.3,l-1);
+const baseInc=l=>INCOME_MULT*Math.pow(2.3,l-1);
 const boostLeft=()=>Math.max(0,Math.ceil((S.boostUntil-Date.now())/1000));
 const mult=()=>(1+.15*S.upg.inc)*(1+.25*S.perm.mult)*(boostLeft()>0?2:1);
 const income=()=>S.garage.reduce((a,l)=>a+(l?baseInc(l):0),0)*mult();

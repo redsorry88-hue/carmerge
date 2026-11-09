@@ -6,7 +6,8 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 const PORT = +process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'data.json');
-const GARAGE = 12, MAX = 20, BIG = 1e40;
+const GARAGE = 12, MAX = 30, BIG = 1e40;
+const INCOME_MULT = 0.5; // должен совпадать с INCOME_MULT в index.html
 const SESSION_TTL = 60 * 24 * 3600 * 1000;
 
 /* ---------- хранилище ----------
@@ -120,7 +121,7 @@ function cleanState(s, old) {
 }
 const income = s => {
   const m = (1 + .15 * s.upg.inc) * (1 + .25 * s.perm.mult) * (s.boostUntil > Date.now() ? 2 : 1);
-  return s.garage.reduce((a, l) => a + (l ? Math.pow(2.3, l - 1) : 0), 0) * m;
+  return s.garage.reduce((a, l) => a + (l ? INCOME_MULT * Math.pow(2.3, l - 1) : 0), 0) * m;
 };
 
 /* ---------- авторизация ---------- */
