@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07060f">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Car Merge">
 <title>Car Merge Pro — Cyberpunk Edition</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -95,6 +100,13 @@ summary{cursor:pointer;padding:4px 0}
 .toast.show{transform:translate(-50%,0)}
 .toast.gift{border-color:var(--yel);box-shadow:0 0 22px #ffe14d55}
 #srv{display:none}
+.bar{height:8px;border-radius:6px;background:#ffffff14;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--mag),var(--cyan));border-radius:6px}
+.days{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.dcell{border:1px solid var(--line);border-radius:12px;padding:8px 2px;text-align:center;background:var(--panel2)}
+.dcell small{display:block;color:var(--dim);font-size:11px}.dcell b{font-size:15px;font-family:'Russo One';font-weight:400}
+.dcell.done{opacity:.5}.dcell.cur{border-color:var(--cyan);box-shadow:0 0 12px #19f3ff55}
+.tabs.t4 button{font-size:12px;padding:10px 2px}
+.menu button small.new{color:var(--yel)}
 </style>
 </head>
 <body>
@@ -136,11 +148,16 @@ summary{cursor:pointer;padding:4px 0}
     <button class="buy" id="buy"></button>
   </div>
   <div class="menu">
+    <button data-s="daily"><span>🎁</span><b>Ежедневная награда</b><small>Заходите каждый день</small></button>
+    <button data-s="quest"><span>📋</span><b>Задания дня</b><small>Награда в коинах</small></button>
+    <button data-s="ach"><span>🏅</span><b>Достижения</b><small>Постоянные цели</small></button>
+    <button data-s="promo"><span>🎟️</span><b>Промокод</b><small>Введите код и получите приз</small></button>
     <button data-s="lb"><span>🏆</span><b>Мировой рейтинг</b><small>Топ игроков по всему миру</small></button>
     <button data-s="exch"><span>💱</span><b>Обмен валюты</b><small>Получайте коины за доллары</small></button>
     <button data-s="coin"><span>💎</span><b>Магазин за коины</b><small>Премиум-улучшения и бусты</small></button>
     <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 30 моделей автопарка</small></button>
     <button data-s="upg"><span>🛒</span><b>Магазин Улучшений</b><small>Прокачивайте автопарк</small></button>
+    <button data-s="install" id="instBtn"><span>📲</span><b>Установить игру</b><small>Иконка на главном экране</small></button>
   </div>
   <button class="reset" id="reset">Сбросить прогресс</button>
 </div>
@@ -293,10 +310,136 @@ async function doAuth(){
 $('aForm').onsubmit=e=>{e.preventDefault();doAuth()};
 $('logout').onclick=async()=>{try{await api('/api/logout','POST',{})}catch(e){}localStorage.removeItem('cmp_token');location.reload()};
 
+
+/* ---------- установка как приложение (PWA) ---------- */
+let deferredPrompt=null;
+const isStandalone=()=>(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;
+if('serviceWorker' in navigator&&/^https?:/.test(location.protocol))navigator.serviceWorker.register('/sw.js').catch(()=>{});
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;if(sheet==='install')renderInstall()});
+addEventListener('appinstalled',()=>{deferredPrompt=null;toast('📲 Игра установлена!');if(sheet==='install')renderInstall()});
+if(isStandalone()){const b=document.getElementById('instBtn');if(b)b.style.display='none'}
+function renderInstall(){
+  const T=$('shT'),B=$('shB');T.textContent='📲 Установка игры';
+  if(isStandalone()){B.innerHTML='<p class="hint">Игра уже установлена и запущена как приложение ✅</p>';return}
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  let h='<p class="hint">Игра появится на главном экране с иконкой и откроется без адресной строки, как обычное приложение.</p>';
+  if(deferredPrompt)h+='<button class="btn mag" id="instGo" style="width:100%;padding:13px">Установить сейчас</button>';
+  else if(ios)h+='<div class="row"><span class="e">📱</span><div class="t"><b>iPhone / iPad (Safari)</b><small>Нажмите «Поделиться» (квадрат со стрелкой) → «На экран “Домой”» → «Добавить».</small></div></div>';
+  else h+='<div class="row"><span class="e">📱</span><div class="t"><b>Android (Chrome)</b><small>Нажмите меню ⋮ в браузере → «Установить приложение» или «Добавить на главный экран».</small></div></div><p class="hint">Если такого пункта нет, откройте игру в Chrome по ссылке и подождите несколько секунд.</p>';
+  B.innerHTML=h;
+  const g=$('instGo');if(g)g.onclick=async()=>{try{deferredPrompt.prompt();await deferredPrompt.userChoice}catch(e){}deferredPrompt=null;renderInstall()};
+}
+
+/* ---------- время ---------- */
+const hm=s=>Math.floor(s/3600)+' ч '+Math.floor(s%3600/60)+' мин';
+const hmd=s=>s>=86400?Math.floor(s/86400)+' д '+Math.floor(s%86400/3600)+' ч':hm(s);
+const utcLeft=()=>{const n=new Date();return Math.floor((Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate()+1)-n.getTime())/1000)};
+
+/* ---------- задания дня и достижения ---------- */
+const QUESTS=[
+  {id:'merge',e:'🔀',n:'Слейте 25 машин',t:25,r:3},
+  {id:'buy',e:'🛒',n:'Купите 15 машин',t:15,r:2},
+  {id:'upg',e:'⚙️',n:'Купите 1 улучшение за деньги',t:1,r:2}
+];
+const QALL=5; // бонус за все три задания
+const ACH=[
+  {id:'m100',e:'🔀',n:'Мастер слияний',d:'Сделайте 100 слияний',t:100,r:5,v:()=>S.stats.merges},
+  {id:'m1000',e:'⚡',n:'Король слияний',d:'Сделайте 1000 слияний',t:1000,r:20,v:()=>S.stats.merges},
+  {id:'l10',e:'🏎️',n:'Скоростной',d:'Откройте машину 10 уровня',t:10,r:10,v:()=>S.maxLevel},
+  {id:'l20',e:'🚀',n:'Гонщик-легенда',d:'Откройте машину 20 уровня',t:20,r:30,v:()=>S.maxLevel},
+  {id:'l30',e:'👑',n:'Генезис',d:'Откройте Genesis Zero (30 уровень)',t:30,r:100,v:()=>S.maxLevel},
+  {id:'b500',e:'🛒',n:'Автоторговец',d:'Купите 500 машин',t:500,r:15,v:()=>S.stats.buys},
+  {id:'boost10',e:'🔥',n:'Ускоритель',d:'Купите 10 бустов ×2',t:10,r:10,v:()=>S.shop.boost},
+  {id:'top1m',e:'💰',n:'Миллионер',d:'Накопите $1 000 000',t:1e6,r:5,v:()=>S.stats.top},
+  {id:'inc10',e:'📈',n:'Бизнес-акула',d:'Купите «Постоянный доход» 10 раз',t:10,r:25,v:()=>S.perm.mult},
+  {id:'auto',e:'🤖',n:'Автоматизатор',d:'Откройте авто-слияние',t:1,r:10,v:()=>S.perm.auto}
+];
+function ensureExtra(){
+  S.stats=S.stats||{};for(const k of['merges','buys','upgs','top'])S.stats[k]=S.stats[k]||0;
+  S.quests=S.quests||{day:'',p:{},c:{}};S.quests.p=S.quests.p||{};S.quests.c=S.quests.c||{};
+  for(const k of['merge','buy','upg'])S.quests.p[k]=S.quests.p[k]||0;
+  S.ach=S.ach||{};checkDay();
+}
+function checkDay(){
+  const t=new Date().toISOString().slice(0,10);
+  if(S.quests.day!==t)S.quests={day:t,p:{merge:0,buy:0,upg:0},c:{}};
+}
+function bump(k){checkDay();S.stats[k+'s']++;S.quests.p[k]++}
+function giveCoins(n,label){S.coins+=n;toast('🎁 '+label+': +'+n+' 🪙',true);sync();renderStats();updateDots();renderSheet()}
+function renderQuests(){
+  checkDay();const T=$('shT'),B=$('shB');T.textContent='📋 Задания дня';
+  const rows=QUESTS.map(q=>{const v=Math.min(q.t,S.quests.p[q.id]),ok=v>=q.t,cl=S.quests.c[q.id];
+    return`<div class="row"><span class="e">${q.e}</span><div class="t"><b>${q.n}</b><small>${fmt(v)} / ${q.t} · награда ${q.r} 🪙</small><div class="bar"><i style="width:${v/q.t*100}%"></i></div></div><button class="btn" data-q="${q.id}" ${ok&&!cl?'':'disabled'}>${cl?'✔':ok?'Забрать':'…'}</button></div>`}).join('');
+  const done=QUESTS.filter(q=>S.quests.c[q.id]).length,allOk=done===QUESTS.length,allCl=S.quests.c.all;
+  B.innerHTML=`<p class="hint">Задания обновляются каждый день в 00:00 UTC (через ${hm(utcLeft())}).</p>`+rows+
+    `<div class="row"><span class="e">🏆</span><div class="t"><b>Все задания дня</b><small>Забрано: ${done} / ${QUESTS.length} · бонус ${QALL} 🪙</small><div class="bar"><i style="width:${done/QUESTS.length*100}%"></i></div></div><button class="btn" data-q="all" ${allOk&&!allCl?'':'disabled'}>${allCl?'✔':allOk?'Забрать':'…'}</button></div>`;
+  B.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.q;checkDay();if(S.quests.c[id])return;
+    if(id==='all'){if(!QUESTS.every(q=>S.quests.c[q.id]))return;S.quests.c.all=true;return giveCoins(QALL,'Все задания дня')}
+    const q=QUESTS.find(x=>x.id===id);if(!q||S.quests.p[id]<q.t)return;S.quests.c[id]=true;giveCoins(q.r,'Задание');
+  });
+}
+function renderAch(){
+  const T=$('shT'),B=$('shB');T.textContent='🏅 Достижения';
+  const got=ACH.filter(a=>S.ach[a.id]).length;
+  B.innerHTML=`<p class="hint">Получено: ${got} / ${ACH.length}. Награда выдаётся один раз.</p>`+ACH.map(a=>{
+    const v=Math.min(a.t,a.v()),ok=v>=a.t,cl=S.ach[a.id];
+    return`<div class="row"><span class="e">${a.e}</span><div class="t"><b>${a.n}</b><small>${a.d} · ${a.r} 🪙</small><div class="bar"><i style="width:${v/a.t*100}%"></i></div><small>${fmt(v)} / ${fmt(a.t)}</small></div><button class="btn" data-a="${a.id}" ${ok&&!cl?'':'disabled'}>${cl?'✔':ok?'Забрать':'…'}</button></div>`}).join('');
+  B.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{
+    const a=ACH.find(x=>x.id===b.dataset.a);if(!a||S.ach[a.id]||a.v()<a.t)return;S.ach[a.id]=true;giveCoins(a.r,'Достижение «'+a.n+'»');
+  });
+}
+
+/* ---------- ежедневная награда ---------- */
+async function renderDaily(){
+  const T=$('shT'),B=$('shB');T.textContent='🎁 Ежедневная награда';B.innerHTML='<p class="hint">Загрузка…</p>';
+  try{
+    await sync();
+    const r=await api('/api/daily');if(sheet!=='daily')return;
+    const cells=r.rewards.map((c,i)=>{const n=i+1,done=r.can?n<r.cycleDay:n<=r.cycleDay,cur=r.can&&n===r.cycleDay;
+      return`<div class="dcell ${done?'done':''} ${cur?'cur':''}"><small>День ${n}</small><b>${done?'✔':c+'🪙'}</b>${n===7?'<small>🎉 бонус</small>':''}</div>`}).join('');
+    B.innerHTML=`<p class="hint">Заходите каждый день: серия растёт, награда тоже. Пропустите день — серия начнётся заново.</p>
+      <p class="hint">🔥 Серия: <b>${r.streak}</b> дн.</p><div class="days">${cells}</div>
+      <p class="hint">${r.can?`Сегодня: <b>${r.coins} 🪙</b> и <b>$${fmt(r.money)}</b>`:`Следующая награда через ${hm(r.left)}`}</p>
+      <button class="btn mag" id="dGo" style="width:100%;padding:13px" ${r.can?'':'disabled'}>${r.can?'Забрать награду':'Уже получено'}</button><div class="err" id="dMsg"></div>`;
+    $('dGo').onclick=async()=>{
+      try{const x=await api('/api/daily/claim','POST',{});applyGrants(x.grants);updateDots();renderDaily()}
+      catch(e){$('dMsg').textContent=e.message}
+    };
+  }catch(e){B.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
+}
+
+/* ---------- промокод ---------- */
+function renderPromo(){
+  const T=$('shT'),B=$('shB');T.textContent='🎟️ Промокод';
+  B.innerHTML=`<p class="hint">Введите промокод и получите награду. Каждый код можно активировать один раз.</p>
+    <label class="fld">Промокод<input id="prIn" autocapitalize="characters" autocomplete="off" placeholder="GIFT2026"></label>
+    <button class="btn mag" id="prGo" style="width:100%;padding:13px">Активировать</button><div class="err" id="prMsg"></div>`;
+  $('prGo').onclick=async()=>{
+    const m=$('prMsg');m.style.color='var(--red)';m.textContent='';
+    try{const r=await api('/api/promo/redeem','POST',{code:$('prIn').value});applyGrants(r.grants);const m2=$('prMsg');if(m2){m2.style.color='var(--grn)';m2.textContent='✅ Промокод активирован!'}}
+    catch(e){m.textContent=e.message}
+  };
+}
+
+/* ---------- метки «есть награда» в меню ---------- */
+function setNote(k,txt){
+  const el=document.querySelector('.menu [data-s="'+k+'"] small');if(!el)return;
+  el.dataset.def=el.dataset.def||el.textContent;
+  el.textContent=txt||el.dataset.def;el.classList.toggle('new',!!txt);
+}
+async function updateDots(){
+  if(!S)return;checkDay();
+  setNote('quest',(QUESTS.some(q=>S.quests.p[q.id]>=q.t&&!S.quests.c[q.id])||(QUESTS.every(q=>S.quests.c[q.id])&&!S.quests.c.all))?'🔴 Есть награда!':'');
+  setNote('ach',ACH.some(a=>!S.ach[a.id]&&a.v()>=a.t)?'🔴 Есть награда!':'');
+  try{const r=await api('/api/daily');setNote('daily',r.can?'🔴 Награда готова!':'Следующая через '+hm(r.left))}catch(e){}
+}
+async function lbAdminPlaceholder(){}
+
 /* ---------- подарки от админа ---------- */
 function applyGrants(list){
   if(!S||!list)return;
-  const msgs=[];
+  const msgs=[],notes=new Set();
   for(const g of list){
     if(S.applied.includes(g.id))continue;
     if(g.type==='money'){S.money+=g.amount;msgs.push('+$'+fmt(g.amount))}
@@ -305,10 +448,11 @@ function applyGrants(list){
       const f=freeSlot();if(f<0)continue; // нет места — применим позже
       S.garage[f]=g.level;S.maxLevel=Math.max(S.maxLevel,g.level);msgs.push(icon(g.level)+' '+NAMES[g.level-1]);
     }else continue;
+    if(g.note)notes.add(g.note);
     S.applied.push(g.id);
   }
   S.applied=S.applied.slice(-200);
-  if(msgs.length){toast('🎁 Подарок от админа: '+msgs.join(', '),true);renderGarage();renderSheet()}
+  if(msgs.length){toast('🎁 '+(notes.size?[...notes].join(', '):'Подарок от админа')+': '+msgs.join(', '),true);renderGarage();renderSheet()}
 }
 async function sync(){
   if(!S)return;
@@ -319,10 +463,11 @@ async function sync(){
 /* ---------- старт ---------- */
 let started=false;
 function start(p){
-  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;S.shop=S.shop||{boost:0,car:0};
+  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;S.shop=S.shop||{boost:0,car:0};ensureExtra();
   $('auth').classList.remove('show');$('app').hidden=false;$('nick').textContent=p.nick;
   sel=null;renderGarage();renderStats();applyGrants(p.grants);
-  if(!started){started=true;loop();setInterval(sync,4000);requestAnimationFrame(draw)}
+  if(!started){started=true;loop();setInterval(sync,4000);setInterval(updateDots,60000);requestAnimationFrame(draw)}
+  updateDots();
 }
 (async()=>{
   if(!token)return showAuth();
@@ -335,8 +480,8 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)sync()});
 let lbTab='maxLevel';
 async function renderLB(){
   const T=$('shT'),B=$('shB');T.textContent='🏆 Мировой рейтинг';
-  const TABS=[['maxLevel','🏎️ Уровень'],['money','💵 Деньги'],['coins','🪙 Коины']];
-  const tabsHtml=`<div class="tabs" style="grid-template-columns:repeat(3,1fr)">${TABS.map(t=>`<button type="button" data-t="${t[0]}" class="${lbTab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div>`;
+  const TABS=[['maxLevel','🏎️ Ур.'],['money','💵 Деньги'],['coins','🪙 Коины'],['week','🗓️ Неделя']];
+  const tabsHtml=`<div class="tabs t4" style="grid-template-columns:repeat(4,1fr)">${TABS.map(t=>`<button type="button" data-t="${t[0]}" class="${lbTab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div>`;
   const bind=()=>B.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{lbTab=b.dataset.t;renderLB()});
   B.innerHTML=tabsHtml+'<p class="hint">Загрузка…</p>';bind();
   const tab=lbTab;
@@ -344,10 +489,11 @@ async function renderLB(){
     await sync();
     const r=await api('/api/leaderboard?sort='+tab);
     if(sheet!=='lb'||tab!==lbTab)return;
-    const val=p=>tab==='maxLevel'?`${icon(p.maxLevel)} ур. ${p.maxLevel}`:tab==='money'?'$'+fmt(p.money):'🪙 '+fmt(p.coins);
-    const sub=p=>tab==='maxLevel'?`+$${fmt(p.income)}/с`:tab==='money'?`ур. ${p.maxLevel} · +$${fmt(p.income)}/с`:`ур. ${p.maxLevel}`;
-    const head=`<p class="hint">${r.me?'Ваше место: <b>#'+r.me.rank+'</b> из '+r.total:'Игроков: '+r.total}</p>`;
-    const list=r.players.map((p,i)=>`<div class="row" style="${p.nick===user.nick?'border-color:var(--cyan);box-shadow:0 0 12px #19f3ff55':''}"><div style="min-width:44px;text-align:center;font-family:'Russo One',sans-serif;font-size:${i<3?20:16}px;color:${['#ffe14d','#d8d8e8','#ff9a4d'][i]||'var(--dim)'}">#${p.rank}</div><div class="t"><b>${['🥇 ','🥈 ','🥉 '][i]||''}${esc(p.nick)}</b><small>${sub(p)}</small></div><b>${val(p)}</b></div>`).join('');
+    const val=p=>tab==='maxLevel'?`${icon(p.maxLevel)} ур. ${p.maxLevel}`:tab==='money'?'$'+fmt(p.money):tab==='week'?'🔀 '+fmt(p.week):'🪙 '+fmt(p.coins);
+    const sub=p=>tab==='maxLevel'?`+$${fmt(p.income)}/с`:tab==='money'?`ур. ${p.maxLevel} · +$${fmt(p.income)}/с`:tab==='week'?`слияний за неделю · ур. ${p.maxLevel}`:`ур. ${p.maxLevel}`;
+    const wk=tab==='week'?`<p class="hint">Недельный счёт — число слияний. До итогов: <b>${hmd(r.weekLeft)}</b>. Призы: 🥇30 🥈20 🥉10 🪙</p>${r.winners&&r.winners.list.length?`<p class="hint">Прошлая неделя: ${r.winners.list.map((w,i)=>['🥇','🥈','🥉'][i]+' '+esc(w.nick)).join(' · ')}</p>`:''}`:'';
+    const head=wk+`<p class="hint">${r.me?'Ваше место: <b>#'+r.me.rank+'</b> из '+r.total:'Игроков: '+r.total}</p>`;
+    const list=r.players.map((p,i)=>`<div class="row" style="${p.nick===user.nick?'border-color:var(--cyan);box-shadow:0 0 12px #19f3ff55':''}"><div style="min-width:44px;text-align:center;font-family:'Russo One',sans-serif;font-size:${i<3?20:16}px;color:${['#ffe14d','#d8d8e8','#ff9a4d'][i]||'var(--dim)'}">#${p.rank}</div><div class="t"><b>${['🥇 ','🥈 ','🥉 '][i]||''}${esc(p.nick)}${p.badge?' '+p.badge:''}</b><small>${sub(p)}</small></div><b>${val(p)}</b></div>`).join('');
     let mine='';
     if(r.me&&r.me.rank>r.players.length)mine=`<div class="row" style="border-color:var(--cyan)"><div style="min-width:44px;text-align:center;font-family:'Russo One',sans-serif">#${r.me.rank}</div><div class="t"><b>${esc(r.me.nick)}</b><small>${sub(r.me)}</small></div><b>${val(r.me)}</b></div>`;
     B.innerHTML=tabsHtml+head+list+mine;bind();
@@ -360,7 +506,7 @@ function loop(){
   setInterval(()=>{
     if(!S)return;
     const now=performance.now(),dt=Math.min((now-last)/1000,3600);last=now;
-    S.money+=income()*dt;
+    S.money+=income()*dt;if(S.money>S.stats.top)S.stats.top=S.money;
     if(S.perm.auto){autoT+=dt;if(autoT>=2.5){autoT=0;autoMerge()}}
     statT+=dt;if(statT>=.2||dt>1){statT=0;renderStats()}
   },200);
@@ -369,7 +515,7 @@ function autoMerge(){
   for(let l=1;l<MAX;l++){
     const a=S.garage.indexOf(l);if(a<0)continue;
     const b=S.garage.indexOf(l,a+1);if(b<0)continue;
-    S.garage[a]=0;S.garage[b]=l+1;S.maxLevel=Math.max(S.maxLevel,l+1);
+    S.garage[a]=0;S.garage[b]=l+1;S.maxLevel=Math.max(S.maxLevel,l+1);bump('merge');
     renderGarage(b);return;
   }
 }
@@ -406,13 +552,13 @@ function tapSlot(i){
   if(sel===i){sel=null;return renderGarage()}
   const sl=S.garage[sel];
   if(!l){S.garage[i]=sl;S.garage[sel]=0;sel=null;return renderGarage()}
-  if(l===sl&&l<MAX){S.garage[sel]=0;S.garage[i]=l+1;S.maxLevel=Math.max(S.maxLevel,l+1);sel=null;if(navigator.vibrate)navigator.vibrate(15);return renderGarage(i)}
+  if(l===sl&&l<MAX){S.garage[sel]=0;S.garage[i]=l+1;S.maxLevel=Math.max(S.maxLevel,l+1);bump('merge');sel=null;if(navigator.vibrate)navigator.vibrate(15);return renderGarage(i)}
   sel=i;renderGarage();
 }
 $('buy').onclick=()=>{
   const c=buyCost(),f=freeSlot();
   if(S.money<c||f<0)return;
-  S.money-=c;S.bought++;S.garage[f]=spawnLvl();S.maxLevel=Math.max(S.maxLevel,spawnLvl());renderGarage(f);
+  S.money-=c;S.bought++;bump('buy');S.garage[f]=spawnLvl();S.maxLevel=Math.max(S.maxLevel,spawnLvl());renderGarage(f);
 };
 
 /* ---------- трасса (canvas) ---------- */
@@ -500,7 +646,7 @@ document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>openSheet(b.datas
 function renderSheet(){
   if(!sheet||!S)return;
   const T=$('shT'),B=$('shB');
-  if(sheet==='lb'){renderLB()}else if(sheet==='exch'){
+  if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='exch'){
     T.textContent='💱 Обмен валюты';
     const opts=[1,10,100].map(n=>`<div class="row"><span class="e">🪙</span><div class="t"><b>${n} коин${n===1?'':'ов'}</b><small>за $${fmt(n*RATE)}</small></div><button class="btn" data-x="${n}" ${S.money<n*RATE?'disabled':''}>Обменять</button></div>`).join('');
     const mx=Math.floor(S.money/RATE);
@@ -521,7 +667,7 @@ function renderSheet(){
     T.textContent='🛒 Магазин Улучшений';
     B.innerHTML=UPG.map((u,i)=>{const l=S.upg[u.k],m=l>=u.max,c=u.cost(l);
       return `<div class="row"><span class="e">${u.e}</span><div class="t"><b>${u.n} · ${l}/${u.max}</b><small>${u.d(l)}</small></div><button class="btn" data-i="${i}" ${(m||S.money<c)?'disabled':''}>${m?'MAX':'$'+fmt(c)}</button></div>`}).join('');
-    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const u=UPG[+b.dataset.i],l=S.upg[u.k],c=u.cost(l);if(l>=u.max||S.money<c)return;S.money-=c;S.upg[u.k]++;renderGarage();renderSheet()});
+    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const u=UPG[+b.dataset.i],l=S.upg[u.k],c=u.cost(l);if(l>=u.max||S.money<c)return;S.money-=c;S.upg[u.k]++;bump('upg');renderGarage();renderSheet()});
   }else if(sheet==='idx'){
     T.textContent='📖 Индекс Автомобилей';
     let h='<div class="idx">';
@@ -560,12 +706,24 @@ function renderAdmin(){
       <label class="fld">Кол-во машин<input id="gCnt" type="number" inputmode="numeric" min="1" max="12" value="1"></label></div>
       <button class="btn mag" id="gGo" style="width:100%;padding:13px">Выдать</button>
       <div class="err" id="gMsg" style="color:var(--grn)"></div>
+      <hr style="border:0;border-top:1px solid #ffffff22;margin:14px 0">
+      <p class="hint"><b>🎟️ Промокоды</b></p>
+      <label class="fld">Код (пусто — случайный)<input id="pCode" autocapitalize="characters" autocomplete="off"></label>
+      <div class="two"><label class="fld">💵 Деньги<input id="pMoney" type="number" inputmode="decimal" min="0" placeholder="0"></label>
+      <label class="fld">🪙 Коины<input id="pCoins" type="number" inputmode="decimal" min="0" placeholder="0"></label></div>
+      <div class="two"><label class="fld">🚗 Машина<select id="pCar">${opts}</select></label>
+      <label class="fld">Сколько человек<input id="pMax" type="number" inputmode="numeric" min="1" value="1"></label></div>
+      <label class="fld">Срок, дней (0 — без срока)<input id="pDays" type="number" inputmode="numeric" min="0" value="0"></label>
+      <button class="btn mag" id="pGo" style="width:100%;padding:13px">Создать промокод</button>
+      <div class="err" id="pMsg" style="color:var(--grn)"></div>
+      <div id="pList"></div>
+      <hr style="border:0;border-top:1px solid #ffffff22;margin:14px 0">
       <label class="fld">Поиск игроков<input id="gQ" placeholder="часть ника" autocomplete="off"></label>
       <div id="gList"></div>`;
-    $('gGo').onclick=grant;
+    $('gGo').onclick=grant;$('pGo').onclick=createPromo;
     $('gQ').oninput=()=>{clearTimeout(searchT);searchT=setTimeout(loadPlayers,250)};
   }
-  loadPlayers();
+  loadPlayers();loadPromos();
 }
 async function loadPlayers(){
   try{
@@ -573,6 +731,21 @@ async function loadPlayers(){
     $('gList').innerHTML=`<p class="hint">Всего аккаунтов: ${r.total}</p>`+r.players.map(p=>`<div class="pl" data-n="${esc(p.nick)}"><span><i class="dot ${p.online?'on':''}"></i>${esc(p.nick)}${p.isAdmin?' 👑':''}</span><small>$${fmt(p.money)} · ${fmt(p.coins)}🪙 · ${p.cars} авто</small></div>`).join('');
     $('gList').querySelectorAll('.pl').forEach(e=>e.onclick=()=>{$('gNick').value=e.dataset.n});
   }catch(e){$('gList').innerHTML=`<div class="err">${esc(e.message)}</div>`}
+}
+
+async function loadPromos(){
+  try{
+    const r=await api('/api/admin/promos');
+    $('pList').innerHTML=r.promos.length?r.promos.map(x=>`<div class="pl"><span><b>${esc(x.code)}</b></span><small>${x.coins?x.coins+'🪙 ':''}${x.money?'$'+fmt(x.money)+' ':''}${x.car?icon(x.car)+' ':''}· ${x.used}/${x.max}${x.exp?' · до '+new Date(x.exp).toLocaleDateString('ru'):''} <a data-d="${esc(x.code)}" style="color:var(--red);cursor:pointer">удалить</a></small></div>`).join(''):'<p class="hint">Промокодов пока нет</p>';
+    $('pList').querySelectorAll('[data-d]').forEach(a=>a.onclick=async()=>{try{await api('/api/admin/promo/delete','POST',{code:a.dataset.d});loadPromos()}catch(e){}});
+  }catch(e){}
+}
+async function createPromo(){
+  const m=$('pMsg');m.style.color='var(--grn)';m.textContent='';
+  try{
+    const r=await api('/api/admin/promo','POST',{code:$('pCode').value,coins:+$('pCoins').value||0,money:+$('pMoney').value||0,car:+$('pCar').value,max:+$('pMax').value||1,days:+$('pDays').value||0});
+    m.textContent='✅ Создан промокод: '+r.code;$('pCode').value='';$('pCoins').value='';$('pMoney').value='';$('pCar').value='0';loadPromos();
+  }catch(e){m.style.color='var(--red)';m.textContent=e.message}
 }
 async function grant(){
   const m=$('gMsg');m.style.color='var(--grn)';m.textContent='';
