@@ -11,6 +11,7 @@ const INCOME_MULT = 0.5; // должен совпадать с INCOME_MULT в in
 const SESSION_TTL = 60 * 24 * 3600 * 1000;
 const DAILY_COINS = [2, 3, 4, 5, 6, 8, 15];          // награда по дням серии (7 дней, дальше по кругу)
 const WEEK_PRIZES = [30, 20, 10];                    // коины за 1/2/3 место недели (по числу слияний)
+const GOLD_X = 3;                                    // золотая машина приносит в 3 раза больше
 const Q_IDS = ['merge', 'buy', 'upg', 'all'];        // ежедневные задания
 const A_IDS = ['m100', 'm1000', 'l10', 'l20', 'l30', 'b500', 'boost10', 'top1m', 'inc10', 'auto']; // достижения
 const dayStr = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -118,7 +119,8 @@ setInterval(() => { const n = Date.now(); for (const [k, v] of hits) if (n - v.t
 const newState = () => {
   const g = Array(GARAGE).fill(0); g[0] = 1;
   return { money: 100, coins: 0, garage: g, bought: 0, upg: { inc: 0, spawn: 0, cheap: 0 }, perm: { mult: 0, auto: 0 }, shop: { boost: 0, car: 0 }, boostUntil: 0, maxLevel: 1, applied: [],
-    stats: { merges: 0, buys: 0, upgs: 0, top: 0 }, quests: { day: '', p: { merge: 0, buy: 0, upg: 0 }, c: {} }, ach: {} };
+    stats: { merges: 0, buys: 0, upgs: 0, top: 0 }, quests: { day: '', p: { merge: 0, buy: 0, upg: 0 }, c: {} }, ach: {},
+    gold: Array(GARAGE).fill(false), prestige: { stars: 0, runs: 0 }, tut: false };
 };
 const num = (v, max = BIG) => { v = +v; return Number.isFinite(v) && v > 0 ? Math.min(v, max) : 0; };
 const int = (v, max) => Math.floor(num(v, max));
@@ -134,8 +136,11 @@ function cleanState(s, old, dt = 4) {
   const quests = { day: /^\d{4}-\d{2}-\d{2}$/.test(q.day) ? q.day : '', p: { merge: int(qp.merge, 1e6), buy: int(qp.buy, 1e6), upg: int(qp.upg, 1e6) }, c: {} };
   for (const id of Q_IDS) if (q.c && q.c[id]) quests.c[id] = true;
   const ach = {}; for (const id of A_IDS) if (s.ach && s.ach[id]) ach[id] = true;
+  const gold = garage.map((l, i) => !!(l && Array.isArray(s.gold) && s.gold[i]));
+  const pr = s.prestige || {}, op = old.prestige || { stars: 0, runs: 0 };
+  const prestige = { stars: Math.max(op.stars || 0, Math.min(int(pr.stars, 1e5), (op.stars || 0) + 16)), runs: Math.max(op.runs || 0, Math.min(int(pr.runs, 1e4), (op.runs || 0) + 1)) };
   return {
-    stats, quests, ach,
+    stats, quests, ach, gold, prestige, tut: !!s.tut,
     money: num(s.money), coins: num(s.coins), garage, bought: int(s.bought, 1e6),
     upg: { inc: int(u.inc, 100), spawn: int(u.spawn, 5), cheap: int(u.cheap, 10) },
     perm: { mult: int(p.mult, 1000), auto: int(p.auto, 1) },
@@ -150,6 +155,8 @@ function normUser(u) {
   s.stats = s.stats || { merges: 0, buys: 0, upgs: 0, top: 0 };
   s.quests = s.quests || { day: '', p: { merge: 0, buy: 0, upg: 0 }, c: {} };
   s.ach = s.ach || {}; s.shop = s.shop || { boost: 0, car: 0 };
+  if (!Array.isArray(s.gold)) s.gold = Array(GARAGE).fill(false);
+  s.prestige = s.prestige || { stars: 0, runs: 0 };
   u.grants = u.grants || []; u.badges = u.badges || []; u.daily = u.daily || { last: '', streak: 0 };
   if (!u.week) u.week = { id: db.meta.week || weekId(), base: s.stats.merges };
 }
@@ -167,8 +174,8 @@ function rollWeek() {
 }
 const weekScore = u => Math.max(0, u.state.stats.merges - (u.week ? u.week.base : 0));
 const income = s => {
-  const m = (1 + .15 * s.upg.inc) * (1 + .25 * s.perm.mult) * (s.boostUntil > Date.now() ? 2 : 1);
-  return s.garage.reduce((a, l) => a + (l ? INCOME_MULT * Math.pow(2.3, l - 1) : 0), 0) * m;
+  const m = (1 + .15 * s.upg.inc) * (1 + .25 * s.perm.mult) * (s.boostUntil > Date.now() ? 2 : 1) * (1 + .1 * ((s.prestige && s.prestige.stars) || 0));
+  return s.garage.reduce((a, l, i) => a + (l ? INCOME_MULT * Math.pow(2.3, l - 1) * (s.gold && s.gold[i] ? GOLD_X : 1) : 0), 0) * m;
 };
 
 const promoHits = new Map();
@@ -176,6 +183,19 @@ function promoLimited(ip) {
   const now = Date.now(), h = promoHits.get(ip) || { n: 0, t: now };
   if (now - h.t > 60000) { h.n = 0; h.t = now; }
   h.n++; promoHits.set(ip, h); return h.n > 10;
+}
+// «доход пока вас нет»: 50% дохода за время отсутствия (до 8 часов), хранится до получения
+function awayInfo(u) {
+  const now = Date.now();
+  if (u.away && now - u.away.t > 24 * 3600e3) u.away = null;
+  if (!u.away && u.lastSync) {
+    const secs = (now - u.lastSync) / 1000;
+    if (secs >= 60) {
+      const capped = Math.min(secs, 8 * 3600), money = Math.floor(income(u.state) * capped * 0.5);
+      if (money > 0) { u.away = { secs: Math.floor(capped), money, t: now }; save(); }
+    }
+  }
+  return u.away || null;
 }
 function dailyInfo(u) {
   const today = dayStr(), yest = dayStr(Date.now() - 864e5), d = u.daily || { last: '', streak: 0 };
@@ -197,7 +217,7 @@ function session(req) {
 }
 const need = req => { const s = session(req); if (!s) throw err('Требуется вход', 401); return s; };
 const admin = req => { const s = need(req); if (!s.u.isAdmin) throw err('Нет доступа', 403); return s; };
-const profile = (k, extra) => Object.assign({ nick: db.users[k].nick, isAdmin: !!db.users[k].isAdmin, state: db.users[k].state, grants: db.users[k].grants }, extra);
+const profile = (k, extra) => Object.assign({ nick: db.users[k].nick, isAdmin: !!db.users[k].isAdmin, state: db.users[k].state, grants: db.users[k].grants, away: awayInfo(db.users[k]) }, extra);
 function login(k) {
   const token = newToken();
   db.sessions[token] = { k, t: Date.now() }; save(true);
@@ -228,6 +248,11 @@ function route(req, p, q, b, ip) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.users[k] = { nick, salt, pw: hashPw(String(b.password), salt), isAdmin: !Object.keys(db.users).length, grants: [], state: newState() };
     normUser(db.users[k]);
+    const rk = String(b.ref || '').trim().toLowerCase(), rr = db.users[rk];
+    if (rr && rk !== k) {                                        // бонус новичку сразу, пригласившему — когда друг дойдёт до 5 уровня
+      db.users[k].refBy = rk; rr.refInvited = (rr.refInvited || 0) + 1;
+      db.users[k].grants.push({ id: rid(), type: 'coins', amount: 3, note: 'Бонус за приглашение' });
+    }
     return login(k);
   }
   if (p === '/api/login' && M === 'POST') {
@@ -243,6 +268,10 @@ function route(req, p, q, b, ip) {
     const s = need(req);
     const now = Date.now(), dt = (now - (s.u.lastSync || now - 4000)) / 1000; s.u.lastSync = now;
     if (b.state) s.u.state = cleanState(b.state, s.u.state, dt);
+    if (s.u.refBy && !s.u.refPaid && s.u.state.maxLevel >= 5) {
+      s.u.refPaid = true; const rr = db.users[s.u.refBy];
+      if (rr && (rr.refPaidN || 0) < 30) { rr.refPaidN = (rr.refPaidN || 0) + 1; rr.grants.push({ id: rid(), type: 'coins', amount: 5, note: 'Друг ' + s.u.nick + ' дошёл до 5 уровня' }); }
+    }
     const ack = new Set(b.ack || []);
     s.u.grants = s.u.grants.filter(g => !ack.has(g.id));
     save(); return { ok: true, grants: s.u.grants };
@@ -261,6 +290,16 @@ function route(req, p, q, b, ip) {
     u.grants.push({ id: rid(), type: 'money', amount: info.money, note: 'Ежедневная награда' });
     save(true); return { ok: true, grants: u.grants, ...dailyInfo(u) };
   }
+  /* --- доход пока вас нет --- */
+  if (p === '/api/offline/claim' && M === 'POST') {
+    const s = need(req), u = s.u;
+    if (!u.away) throw err('Нечего забирать', 409);
+    const money = u.away.money * (b.double ? 2 : 1);
+    u.grants.push({ id: rid(), type: 'money', amount: money, note: 'Доход, пока вас не было' });
+    u.away = null; save(true); return { ok: true, grants: u.grants };
+  }
+  /* --- реферальная ссылка --- */
+  if (p === '/api/ref') { const s = need(req), u = s.u; return { code: u.nick, invited: u.refInvited || 0, paid: u.refPaidN || 0, bonusNew: 3, bonusRef: 5, need: 5 }; }
   /* --- промокоды --- */
   if (p === '/api/promo/redeem' && M === 'POST') {
     const s = need(req), u = s.u;

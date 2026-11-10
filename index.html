@@ -107,6 +107,16 @@ summary{cursor:pointer;padding:4px 0}
 .dcell.done{opacity:.5}.dcell.cur{border-color:var(--cyan);box-shadow:0 0 12px #19f3ff55}
 .tabs.t4 button{font-size:12px;padding:10px 2px}
 .menu button small.new{color:var(--yel)}
+.slot.gold{border:2px solid #ffd34d!important;box-shadow:0 0 16px #ffd34d99,inset 0 0 14px #ffd34d55!important;background:linear-gradient(160deg,#3a2d08,var(--panel2))}
+.slot.gold::after{content:'✨';position:absolute;top:2px;right:4px;font-size:12px}
+.tut-hl{outline:3px solid var(--yel);outline-offset:3px;position:relative;z-index:61;animation:tp 1s infinite alternate}
+@keyframes tp{from{outline-color:#ffe14d}to{outline-color:#ff2bd6}}
+#tutBg{position:fixed;inset:0;background:#0006;z-index:60;pointer-events:none}
+#tutBox{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:80;background:var(--panel);border:1px solid var(--cyan);border-radius:16px;padding:14px;box-shadow:0 0 24px #19f3ff44}
+#tutBox h4{font-family:'Russo One';font-weight:400;font-size:16px;margin:0 0 6px}#tutBox p{margin:0 0 10px;font-size:13px;color:var(--txt)}
+#tutBox .dots{display:flex;gap:5px;margin-bottom:10px}#tutBox .dots i{width:8px;height:8px;border-radius:50%;background:#ffffff33}#tutBox .dots i.on{background:var(--cyan)}
+#tutBox .bt{display:flex;gap:8px;justify-content:space-between;align-items:center}
+#snd{font-size:15px;padding:0 8px 0 0!important;text-decoration:none!important}
 </style>
 </head>
 <body>
@@ -130,7 +140,7 @@ summary{cursor:pointer;padding:4px 0}
   <header>
     <div class="logo" id="logo">🏎️</div>
     <div><h1>Car Merge Pro</h1><small>PRO TRACK EDITION</small></div>
-    <div class="who"><b id="nick"></b><button id="logout">Выйти</button></div>
+    <div class="who"><b id="nick"></b><button id="snd" title="Звук">🔊</button><button id="logout">Выйти</button></div>
   </header>
   <div class="stats">
     <div class="stat m"><span>💵 Баланс</span><b id="sMoney">$0</b></div>
@@ -148,6 +158,8 @@ summary{cursor:pointer;padding:4px 0}
     <button class="buy" id="buy"></button>
   </div>
   <div class="menu">
+    <button data-s="prest"><span>⭐</span><b>Престиж</b><small>Начать заново с бонусом</small></button>
+    <button data-s="ref"><span>👥</span><b>Пригласить друзей</b><small>Коины за каждого друга</small></button>
     <button data-s="daily"><span>🎁</span><b>Ежедневная награда</b><small>Заходите каждый день</small></button>
     <button data-s="quest"><span>📋</span><b>Задания дня</b><small>Награда в коинах</small></button>
     <button data-s="ach"><span>🏅</span><b>Достижения</b><small>Постоянные цели</small></button>
@@ -157,6 +169,7 @@ summary{cursor:pointer;padding:4px 0}
     <button data-s="coin"><span>💎</span><b>Магазин за коины</b><small>Премиум-улучшения и бусты</small></button>
     <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 30 моделей автопарка</small></button>
     <button data-s="upg"><span>🛒</span><b>Магазин Улучшений</b><small>Прокачивайте автопарк</small></button>
+    <button data-s="tut"><span>📘</span><b>Как играть</b><small>Короткое обучение</small></button>
     <button data-s="install" id="instBtn"><span>📲</span><b>Установить игру</b><small>Иконка на главном экране</small></button>
   </div>
   <button class="reset" id="reset">Сбросить прогресс</button>
@@ -189,13 +202,15 @@ function fmt(n){
 let S=null,user=null,token=localStorage.getItem('cmp_token'),sel=null;
 const baseInc=l=>INCOME_MULT*Math.pow(2.3,l-1);
 const boostLeft=()=>Math.max(0,Math.ceil((S.boostUntil-Date.now())/1000));
-const mult=()=>(1+.15*S.upg.inc)*(1+.25*S.perm.mult)*(boostLeft()>0?2:1);
-const income=()=>S.garage.reduce((a,l)=>a+(l?baseInc(l):0),0)*mult();
+const prestMult=()=>1+.1*(S.prestige?S.prestige.stars:0);
+const mult=()=>(1+.15*S.upg.inc)*(1+.25*S.perm.mult)*(boostLeft()>0?2:1)*prestMult();
+const income=()=>S.garage.reduce((a,l,i)=>a+(l?baseInc(l)*(S.gold&&S.gold[i]?GOLD_X:1):0),0)*mult();
 const buyCost=()=>Math.min(1e15,Math.floor(25*Math.pow(1.13,S.bought)*(1-.05*S.upg.cheap)));
 const spawnLvl=()=>1+S.upg.spawn;
 const freeSlot=()=>S.garage.indexOf(0);
 const RATE=10000; // $ за 1 коин
 /* МАГАЗИН ЗА КОИНЫ: цены (в коинах) и лимиты покупок. Меняйте числа здесь. */
+const GOLD_X=3,GOLD_CHANCE=0.04; // золотая машина: доход ×3, шанс 4% при покупке
 const SHOP={
   boost:{price:3,max:50},          // Буст ×2 на 60 секунд
   car:{price:10,max:5},            // Премиум-авто (ур. 6)
@@ -302,7 +317,7 @@ $('tLogin').onclick=()=>setMode('login');$('tReg').onclick=()=>setMode('reg');
 async function doAuth(){
   $('aErr').textContent='';$('aGo').disabled=true;
   try{
-    const r=await api(mode==='login'?'/api/login':'/api/register','POST',{nick:$('aNick').value,password:$('aPass').value});
+    const r=await api(mode==='login'?'/api/login':'/api/register','POST',{nick:$('aNick').value,password:$('aPass').value,ref:localStorage.getItem('cmp_ref')||''});
     token=r.token;localStorage.setItem('cmp_token',token);$('aPass').value='';start(r);
   }catch(e){$('aErr').textContent=e.message}
   $('aGo').disabled=false;
@@ -310,6 +325,113 @@ async function doAuth(){
 $('aForm').onsubmit=e=>{e.preventDefault();doAuth()};
 $('logout').onclick=async()=>{try{await api('/api/logout','POST',{})}catch(e){}localStorage.removeItem('cmp_token');location.reload()};
 
+
+
+/* ---------- звуки (синтез, без файлов) ---------- */
+let AC=null,SND=localStorage.getItem('cmp_snd')!=='0',AWAY=null;
+function ac(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();return AC}
+function tone(f,t0,d,type,v){const a=ac();if(!a)return;const o=a.createOscillator(),g=a.createGain(),t=a.currentTime+t0;o.type=type||'sine';o.frequency.setValueAtTime(f,t);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v||.07,t+.012);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g);g.connect(a.destination);o.start(t);o.stop(t+d+.03)}
+const SFX={
+  merge:()=>{tone(520,0,.09,'triangle');tone(780,.07,.12,'triangle')},
+  buy:()=>{tone(880,0,.06,'square',.035);tone(1320,.05,.08,'square',.035)},
+  win:()=>{[523,659,784,1047].forEach((f,i)=>tone(f,i*.09,.16,'triangle',.07))},
+  gold:()=>{[784,988,1319,1568].forEach((f,i)=>tone(f,i*.07,.18,'sine',.08))},
+  prestige:()=>{[262,392,523,784,1047].forEach((f,i)=>tone(f,i*.1,.25,'sawtooth',.045))}
+};
+function sfx(n){if(!SND)return;try{SFX[n]&&SFX[n]()}catch(e){}}
+document.addEventListener('pointerdown',()=>{if(SND)ac()},{passive:true});
+function sndIcon(){const b=document.getElementById('snd');if(b)b.textContent=SND?'🔊':'🔇'}
+document.getElementById('snd').onclick=()=>{SND=!SND;localStorage.setItem('cmp_snd',SND?'1':'0');sndIcon();if(SND)sfx('buy')};
+sndIcon();
+
+/* ---------- золотые машины / престиж ---------- */
+const PREST_MIN=15;
+const garageMax=()=>Math.max(0,...S.garage);
+const prestGain=()=>garageMax()>=PREST_MIN?garageMax()-PREST_MIN+1:0;
+let prestArm=0;
+function renderPrestige(){
+  const T=$('shT'),B=$('shB');T.textContent='⭐ Престиж';
+  const g=prestGain(),m=garageMax(),st=S.prestige.stars;
+  B.innerHTML=`<p class="hint">Начните игру заново и получите ⭐ звёзды: каждая навсегда даёт <b>+10% к доходу</b>.</p>
+    <div class="row"><span class="e">⭐</span><div class="t"><b>Ваши звёзды: ${st}</b><small>Бонус к доходу: +${st*10}% · перезапусков: ${S.prestige.runs}</small></div></div>
+    <p class="hint"><b>Сбросится:</b> деньги, машины, улучшения за деньги, бусты.<br><b>Останется:</b> коины, покупки за коины, задания, достижения, рекорд уровня и звёзды.</p>
+    <p class="hint">Нужна машина ${PREST_MIN}+ уровня (сейчас лучшая: ${m||0}). Звёзд за перезапуск: 1 за ${PREST_MIN} уровень + по 1 за каждый уровень выше.</p>
+    <button class="btn mag" id="psBtn" style="width:100%;padding:13px" ${g?'':'disabled'}>${g?`Начать заново (+${g} ⭐)`:'Пока недоступно'}</button>`;
+  $('psBtn').onclick=()=>{
+    const b=$('psBtn');
+    if(Date.now()-prestArm>5000){prestArm=Date.now();b.textContent='Точно сбросить? Нажмите ещё раз';return}
+    prestArm=0;doPrestige();
+  };
+}
+function doPrestige(){
+  const g=prestGain();if(!g)return;
+  S.prestige.stars+=g;S.prestige.runs++;
+  S.money=100;S.garage=Array(GARAGE).fill(0);S.garage[0]=1;S.gold=Array(GARAGE).fill(false);
+  S.bought=0;S.upg={inc:0,spawn:0,cheap:0};S.boostUntil=0;sel=null;
+  sfx('prestige');toast('⭐ Престиж! +'+g+' ⭐ · доход +'+S.prestige.stars*10+'%',true);
+  sync();renderGarage();renderStats();updateDots();renderSheet();
+}
+
+/* ---------- доход пока вас нет ---------- */
+function renderAway(){
+  const T=$('shT'),B=$('shB');
+  if(!AWAY){closeSheet();return}
+  T.textContent='💤 Пока вас не было';
+  B.innerHTML=`<p class="hint">Вас не было ${hm(AWAY.secs)}. Машины заработали:</p>
+    <div style="font-size:30px;text-align:center;margin:12px 0;font-family:'Russo One'">$${fmt(AWAY.money)}</div>
+    <p class="hint">Это половина обычного дохода. Двойную сумму можно забрать за 1 🪙.</p>
+    <button class="btn mag" id="aw1" style="width:100%;padding:13px;margin-bottom:8px">Забрать $${fmt(AWAY.money)}</button>
+    <button class="btn" id="aw2" style="width:100%;padding:13px" ${S.coins>=1?'':'disabled'}>Забрать $${fmt(AWAY.money*2)} за 1 🪙</button><div class="err" id="awMsg"></div>`;
+  const go=async dbl=>{
+    try{
+      if(dbl){if(S.coins<1)return;S.coins-=1}
+      const r=await api('/api/offline/claim','POST',{double:!!dbl});
+      AWAY=null;applyGrants(r.grants);closeSheet();renderStats();
+    }catch(e){if(dbl)S.coins+=1;const m=$('awMsg');if(m)m.textContent=e.message}
+  };
+  $('aw1').onclick=()=>go(false);$('aw2').onclick=()=>go(true);
+}
+
+/* ---------- реферальная ссылка ---------- */
+try{const r=new URLSearchParams(location.search).get('ref');if(r)localStorage.setItem('cmp_ref',r.slice(0,16))}catch(e){}
+async function renderRef(){
+  const T=$('shT'),B=$('shB');T.textContent='👥 Пригласить друзей';B.innerHTML='<p class="hint">Загрузка…</p>';
+  try{
+    const r=await api('/api/ref');if(sheet!=='ref')return;
+    const link=location.origin+'/?ref='+encodeURIComponent(r.code);
+    B.innerHTML=`<p class="hint">Отправьте ссылку другу. Он получит <b>${r.bonusNew} 🪙</b> сразу, а вы — <b>${r.bonusRef} 🪙</b>, когда друг дойдёт до ${r.need} уровня (до 30 друзей).</p>
+      <label class="fld">Ваша ссылка<input id="refLink" readonly value="${esc(link)}"></label>
+      <div class="two"><button class="btn mag" id="refCopy" style="padding:12px">Копировать</button><button class="btn" id="refShare" style="padding:12px">Поделиться</button></div>
+      <div class="row" style="margin-top:10px"><span class="e">👥</span><div class="t"><b>Приглашено: ${r.invited}</b><small>Дошли до ${r.need} уровня и принесли награду: ${r.paid}</small></div></div>`;
+    const copy=async()=>{try{await navigator.clipboard.writeText(link)}catch(e){const i=$('refLink');i.select();document.execCommand('copy')}toast('📋 Ссылка скопирована')};
+    $('refCopy').onclick=copy;
+    $('refShare').onclick=async()=>{if(navigator.share){try{await navigator.share({title:'Car Merge Pro',text:'Играй со мной в Car Merge Pro и попади в мировой рейтинг!',url:link})}catch(e){}}else copy()};
+  }catch(e){B.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
+}
+
+/* ---------- обучение ---------- */
+const TUT=[
+  {t:'Добро пожаловать! 🏎️',d:'Нажмите «Купить машину» — первая машина появится в гараже. Деньги нужны на новые машины.',el:'#buy'},
+  {t:'Слияние машин 🔀',d:'Нажмите на машину, потом на такую же — они объединятся в машину уровнем выше. Чем выше уровень, тем больше доход.',el:'#garage'},
+  {t:'Доход каждую секунду 💵',d:'Машины сами зарабатывают деньги. Даже когда вас нет в игре, они копят доход (до 8 часов).',el:'.stat.i'},
+  {t:'Коины 🪙',d:'Меняйте деньги на коины в «Обмене валюты» и тратьте их на буст ×2, премиум-авто и постоянный доход.',el:'.menu [data-s="exch"]'},
+  {t:'Награды каждый день 🎁',d:'Забирайте ежедневную награду, выполняйте задания, собирайте достижения и поднимайтесь в мировом рейтинге.',el:'.menu [data-s="daily"]'},
+  {t:'Золото и престиж ⭐',d:'Иногда при покупке выпадает золотая машина — она приносит доход ×3. Дойдёте до 15 уровня — можно начать заново с бонусом дохода.',el:'.menu [data-s="prest"]'}
+];
+let tutI=-1;
+function tutClear(){document.querySelectorAll('.tut-hl').forEach(e=>e.classList.remove('tut-hl'));['tutBox','tutBg'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove()})}
+function tutEnd(){tutClear();tutI=-1;if(S&&!S.tut){S.tut=true;sync()}}
+function startTut(){closeSheet();tutI=0;showTut()}
+function maybeTut(){if(!S||S.tut)return;if(S.bought<5&&S.maxLevel<=2)setTimeout(startTut,700);else S.tut=true}
+function showTut(){
+  tutClear();const st=TUT[tutI];if(!st)return tutEnd();
+  const bg=document.createElement('div');bg.id='tutBg';document.body.appendChild(bg);
+  const box=document.createElement('div');box.id='tutBox';
+  box.innerHTML=`<div class="dots">${TUT.map((_,i)=>`<i class="${i===tutI?'on':''}"></i>`).join('')}</div><h4>${st.t}</h4><p>${st.d}</p><div class="bt"><button class="btn alt" id="tutSkip">Пропустить</button><button class="btn mag" id="tutNext">${tutI===TUT.length-1?'Понятно!':'Далее'}</button></div>`;
+  document.body.appendChild(box);
+  const el=document.querySelector(st.el);if(el){el.classList.add('tut-hl');el.scrollIntoView({block:'center',behavior:'smooth'})}
+  $('tutSkip').onclick=tutEnd;$('tutNext').onclick=()=>{tutI++;tutI>=TUT.length?tutEnd():showTut()};
+}
 
 /* ---------- установка как приложение (PWA) ---------- */
 let deferredPrompt=null;
@@ -359,13 +481,16 @@ function ensureExtra(){
   S.quests=S.quests||{day:'',p:{},c:{}};S.quests.p=S.quests.p||{};S.quests.c=S.quests.c||{};
   for(const k of['merge','buy','upg'])S.quests.p[k]=S.quests.p[k]||0;
   S.ach=S.ach||{};checkDay();
+  if(!Array.isArray(S.gold))S.gold=Array(GARAGE).fill(false);
+  while(S.gold.length<GARAGE)S.gold.push(false);
+  S.prestige=S.prestige||{stars:0,runs:0};
 }
 function checkDay(){
   const t=new Date().toISOString().slice(0,10);
   if(S.quests.day!==t)S.quests={day:t,p:{merge:0,buy:0,upg:0},c:{}};
 }
 function bump(k){checkDay();S.stats[k+'s']++;S.quests.p[k]++}
-function giveCoins(n,label){S.coins+=n;toast('🎁 '+label+': +'+n+' 🪙',true);sync();renderStats();updateDots();renderSheet()}
+function giveCoins(n,label){sfx('win');S.coins+=n;toast('🎁 '+label+': +'+n+' 🪙',true);sync();renderStats();updateDots();renderSheet()}
 function renderQuests(){
   checkDay();const T=$('shT'),B=$('shB');T.textContent='📋 Задания дня';
   const rows=QUESTS.map(q=>{const v=Math.min(q.t,S.quests.p[q.id]),ok=v>=q.t,cl=S.quests.c[q.id];
@@ -446,13 +571,13 @@ function applyGrants(list){
     else if(g.type==='coins'){S.coins+=g.amount;msgs.push('+'+fmt(g.amount)+' 🪙')}
     else if(g.type==='car'){
       const f=freeSlot();if(f<0)continue; // нет места — применим позже
-      S.garage[f]=g.level;S.maxLevel=Math.max(S.maxLevel,g.level);msgs.push(icon(g.level)+' '+NAMES[g.level-1]);
+      S.garage[f]=g.level;S.gold[f]=false;S.maxLevel=Math.max(S.maxLevel,g.level);msgs.push(icon(g.level)+' '+NAMES[g.level-1]);
     }else continue;
     if(g.note)notes.add(g.note);
     S.applied.push(g.id);
   }
   S.applied=S.applied.slice(-200);
-  if(msgs.length){toast('🎁 '+(notes.size?[...notes].join(', '):'Подарок от админа')+': '+msgs.join(', '),true);renderGarage();renderSheet()}
+  if(msgs.length){sfx('win');toast('🎁 '+(notes.size?[...notes].join(', '):'Подарок от админа')+': '+msgs.join(', '),true);renderGarage();renderSheet()}
 }
 async function sync(){
   if(!S)return;
@@ -463,11 +588,12 @@ async function sync(){
 /* ---------- старт ---------- */
 let started=false;
 function start(p){
-  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;S.shop=S.shop||{boost:0,car:0};ensureExtra();
+  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;S.shop=S.shop||{boost:0,car:0};ensureExtra();AWAY=p.away||null;
   $('auth').classList.remove('show');$('app').hidden=false;$('nick').textContent=p.nick;
   sel=null;renderGarage();renderStats();applyGrants(p.grants);
   if(!started){started=true;loop();setInterval(sync,4000);setInterval(updateDots,60000);requestAnimationFrame(draw)}
   updateDots();
+  if(AWAY&&AWAY.money>0)setTimeout(()=>openSheet('away'),500);else maybeTut();
 }
 (async()=>{
   if(!token)return showAuth();
@@ -515,7 +641,7 @@ function autoMerge(){
   for(let l=1;l<MAX;l++){
     const a=S.garage.indexOf(l);if(a<0)continue;
     const b=S.garage.indexOf(l,a+1);if(b<0)continue;
-    S.garage[a]=0;S.garage[b]=l+1;S.maxLevel=Math.max(S.maxLevel,l+1);bump('merge');
+    S.garage[a]=0;S.garage[b]=l+1;S.gold[b]=!!(S.gold[a]||S.gold[b]);S.gold[a]=false;S.maxLevel=Math.max(S.maxLevel,l+1);bump('merge');sfx('merge');
     renderGarage(b);return;
   }
 }
@@ -537,10 +663,10 @@ function renderGarage(pop){
   const g=$('garage');g.innerHTML='';
   S.garage.forEach((l,i)=>{
     const d=document.createElement('button');
-    d.className='slot'+(l?' car':'')+(sel===i?' sel':'')+(pop===i?' pop':'');
+    d.className='slot'+(l?' car':'')+(l&&S.gold[i]?' gold':'')+(sel===i?' sel':'')+(pop===i?' pop':'');
     if(l){
       d.style.setProperty('--c',color(l));d.style.setProperty('--h',hue(l)+'deg');
-      d.innerHTML=`<span class="ic">${icon(l)}</span><span class="lv">${l}</span><span class="ps">$${fmt(baseInc(l)*mult())}/с</span>`;
+      d.innerHTML=`<span class="ic">${icon(l)}</span><span class="lv">${l}</span><span class="ps">$${fmt(baseInc(l)*mult()*(S.gold[i]?GOLD_X:1))}/с</span>`;
     }
     d.onclick=()=>tapSlot(i);g.appendChild(d);
   });
@@ -551,14 +677,14 @@ function tapSlot(i){
   if(sel===null){if(l){sel=i;renderGarage()}return}
   if(sel===i){sel=null;return renderGarage()}
   const sl=S.garage[sel];
-  if(!l){S.garage[i]=sl;S.garage[sel]=0;sel=null;return renderGarage()}
-  if(l===sl&&l<MAX){S.garage[sel]=0;S.garage[i]=l+1;S.maxLevel=Math.max(S.maxLevel,l+1);bump('merge');sel=null;if(navigator.vibrate)navigator.vibrate(15);return renderGarage(i)}
+  if(!l){S.garage[i]=sl;S.garage[sel]=0;S.gold[i]=S.gold[sel];S.gold[sel]=false;sel=null;return renderGarage()}
+  if(l===sl&&l<MAX){S.garage[sel]=0;S.garage[i]=l+1;S.gold[i]=!!(S.gold[i]||S.gold[sel]);S.gold[sel]=false;S.maxLevel=Math.max(S.maxLevel,l+1);bump('merge');sfx('merge');sel=null;if(navigator.vibrate)navigator.vibrate(15);return renderGarage(i)}
   sel=i;renderGarage();
 }
 $('buy').onclick=()=>{
   const c=buyCost(),f=freeSlot();
   if(S.money<c||f<0)return;
-  S.money-=c;S.bought++;bump('buy');S.garage[f]=spawnLvl();S.maxLevel=Math.max(S.maxLevel,spawnLvl());renderGarage(f);
+  S.money-=c;S.bought++;bump('buy');S.garage[f]=spawnLvl();S.gold[f]=Math.random()<GOLD_CHANCE;S.maxLevel=Math.max(S.maxLevel,spawnLvl());if(S.gold[f]){toast('✨ Золотая машина! Доход ×3',true);sfx('gold')}else sfx('buy');renderGarage(f);
 };
 
 /* ---------- трасса (canvas) ---------- */
@@ -638,7 +764,7 @@ function drawOld(ts){
 
 /* ---------- шторка / магазины ---------- */
 let sheet=null;
-function openSheet(k){sheet=k;$('ov').classList.add('show');renderSheet()}
+function openSheet(k){if(k==='tut'){startTut();return}sheet=k;$('ov').classList.add('show');renderSheet()}
 function closeSheet(){sheet=null;$('ov').classList.remove('show')}
 $('shX').onclick=closeSheet;$('ov').onclick=e=>{if(e.target.id==='ov')closeSheet()};
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>openSheet(b.dataset.s));
@@ -646,7 +772,7 @@ document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>openSheet(b.datas
 function renderSheet(){
   if(!sheet||!S)return;
   const T=$('shT'),B=$('shB');
-  if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='exch'){
+  if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='prest'){renderPrestige()}else if(sheet==='ref'){renderRef()}else if(sheet==='away'){renderAway()}else if(sheet==='exch'){
     T.textContent='💱 Обмен валюты';
     const opts=[1,10,100].map(n=>`<div class="row"><span class="e">🪙</span><div class="t"><b>${n} коин${n===1?'':'ов'}</b><small>за $${fmt(n*RATE)}</small></div><button class="btn" data-x="${n}" ${S.money<n*RATE?'disabled':''}>Обменять</button></div>`).join('');
     const mx=Math.floor(S.money/RATE);
@@ -656,18 +782,18 @@ function renderSheet(){
     T.textContent='💎 Магазин за коины';
     const items=[
       {e:'🚀',n:'Буст ×2 на 60 секунд',d:'Время суммируется',c:SHOP.boost.price,have:S.shop.boost,max:SHOP.boost.max,f:()=>{S.boostUntil=Math.max(S.boostUntil,Date.now())+60000;S.shop.boost++}},
-      {e:'🏎️',n:'Премиум-авто (ур. 6)',d:freeSlot()>=0?'Сразу в гараж':'Нет свободного места в гараже',c:SHOP.car.price,have:S.shop.car,max:SHOP.car.max,room:freeSlot()>=0,f:()=>{const i=freeSlot();S.garage[i]=6;S.maxLevel=Math.max(S.maxLevel,6);S.shop.car++}},
+      {e:'🏎️',n:'Премиум-авто (ур. 6)',d:freeSlot()>=0?'Сразу в гараж':'Нет свободного места в гараже',c:SHOP.car.price,have:S.shop.car,max:SHOP.car.max,room:freeSlot()>=0,f:()=>{const i=freeSlot();S.garage[i]=6;S.gold[i]=false;S.maxLevel=Math.max(S.maxLevel,6);S.shop.car++}},
       {e:'📈',n:'Постоянный доход +25%',d:'Навсегда, суммируется',c:SHOP.inc.price+SHOP.inc.step*S.perm.mult,have:S.perm.mult,max:SHOP.inc.max,f:()=>{S.perm.mult++}},
       {e:'🤖',n:'Авто-слияние',d:'Сам объединяет одинаковые авто',c:SHOP.auto.price,have:S.perm.auto,max:SHOP.auto.max,f:()=>{S.perm.auto=1}}
     ];
     const can=it=>it.have<it.max&&it.room!==false&&S.coins>=it.c;
     B.innerHTML=items.map((it,i)=>{const left=it.max-it.have,done=left<=0;return`<div class="row"><span class="e">${it.e}</span><div class="t"><b>${it.n}</b><small>${it.d}</small><small>Куплено: <b>${it.have}</b> из ${it.max} · ${done?'лимит достигнут':'можно купить ещё '+left}</small></div><button class="btn" data-i="${i}" ${can(it)?'':'disabled'}>${done?'Макс':it.c+' 🪙'}</button></div>`}).join('');
-    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.i];if(!can(it))return;S.coins-=it.c;it.f();renderGarage();renderSheet()});
+    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.i];if(!can(it))return;S.coins-=it.c;it.f();sfx('buy');renderGarage();renderSheet()});
   }else if(sheet==='upg'){
     T.textContent='🛒 Магазин Улучшений';
     B.innerHTML=UPG.map((u,i)=>{const l=S.upg[u.k],m=l>=u.max,c=u.cost(l);
       return `<div class="row"><span class="e">${u.e}</span><div class="t"><b>${u.n} · ${l}/${u.max}</b><small>${u.d(l)}</small></div><button class="btn" data-i="${i}" ${(m||S.money<c)?'disabled':''}>${m?'MAX':'$'+fmt(c)}</button></div>`}).join('');
-    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const u=UPG[+b.dataset.i],l=S.upg[u.k],c=u.cost(l);if(l>=u.max||S.money<c)return;S.money-=c;S.upg[u.k]++;bump('upg');renderGarage();renderSheet()});
+    B.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{const u=UPG[+b.dataset.i],l=S.upg[u.k],c=u.cost(l);if(l>=u.max||S.money<c)return;S.money-=c;S.upg[u.k]++;bump('upg');sfx('buy');renderGarage();renderSheet()});
   }else if(sheet==='idx'){
     T.textContent='📖 Индекс Автомобилей';
     let h='<div class="idx">';
