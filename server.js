@@ -79,6 +79,7 @@ async function flush() {
       const cmds = [], apply = [];
       for (const k in db.users) { const j = JSON.stringify(db.users[k]); if (persisted.u[k] !== j) { cmds.push(['HSET', 'cm:users', k, j]); apply.push(() => persisted.u[k] = j); } }
       for (const t in db.sessions) { const j = JSON.stringify(db.sessions[t]); if (persisted.s[t] !== j) { cmds.push(['HSET', 'cm:sessions', t, j]); apply.push(() => persisted.s[t] = j); } }
+      for (const k in persisted.u) if (!db.users[k]) { cmds.push(['HDEL', 'cm:users', k]); apply.push(() => delete persisted.u[k]); }
       for (const c in db.promos) { const j = JSON.stringify(db.promos[c]); if (persisted.p[c] !== j) { cmds.push(['HSET', 'cm:promos', c, j]); apply.push(() => persisted.p[c] = j); } }
       for (const c in persisted.p) if (!db.promos[c]) { cmds.push(['HDEL', 'cm:promos', c]); apply.push(() => delete persisted.p[c]); }
       { const j = JSON.stringify(db.meta); if (persisted.m !== j) { cmds.push(['HSET', 'cm:meta', 'main', j]); apply.push(() => persisted.m = j); } }
@@ -178,6 +179,18 @@ const income = s => {
   return s.garage.reduce((a, l, i) => a + (l ? INCOME_MULT * Math.pow(2.3, l - 1) * (s.gold && s.gold[i] ? GOLD_X : 1) : 0), 0) * m;
 };
 
+const guestHits = new Map();
+function guestLimited(ip) {                              // не больше 200 новых гостей в час с одного адреса
+  const now = Date.now(), h = guestHits.get(ip) || { n: 0, t: now };
+  if (now - h.t > 3600000) { h.n = 0; h.t = now; }
+  h.n++; guestHits.set(ip, h); return h.n > 200;
+}
+// гости, не заходившие 30 дней и не сохранившие аккаунт, удаляются
+setInterval(() => {
+  const now = Date.now(); let n = 0;
+  for (const k in db.users) { const u = db.users[k], t = u.lastSync || u.created; if (u.guest && t && now - t > 30 * 864e5) { delete db.users[k]; n++; } }
+  if (n) { for (const t in db.sessions) if (!db.users[db.sessions[t].k]) delete db.sessions[t]; save(); }
+}, 3600e3);
 const promoHits = new Map();
 function promoLimited(ip) {
   const now = Date.now(), h = promoHits.get(ip) || { n: 0, t: now };
@@ -217,7 +230,7 @@ function session(req) {
 }
 const need = req => { const s = session(req); if (!s) throw err('Требуется вход', 401); return s; };
 const admin = req => { const s = need(req); if (!s.u.isAdmin) throw err('Нет доступа', 403); return s; };
-const profile = (k, extra) => Object.assign({ nick: db.users[k].nick, isAdmin: !!db.users[k].isAdmin, state: db.users[k].state, grants: db.users[k].grants, away: awayInfo(db.users[k]) }, extra);
+const profile = (k, extra) => Object.assign({ nick: db.users[k].nick, isAdmin: !!db.users[k].isAdmin, state: db.users[k].state, grants: db.users[k].grants, away: awayInfo(db.users[k]), guest: !!db.users[k].guest }, extra);
 function login(k) {
   const token = newToken();
   db.sessions[token] = { k, t: Date.now() }; save(true);
@@ -254,6 +267,38 @@ function route(req, p, q, b, ip) {
       db.users[k].grants.push({ id: rid(), type: 'coins', amount: 3, note: 'Бонус за приглашение' });
     }
     return login(k);
+  }
+  if (p === '/api/guest' && M === 'POST') {            // «Играть сразу»: аккаунт без ника и пароля
+    if (guestLimited(ip)) throw err('С вашей сети создано слишком много игроков, попробуйте позже', 429);
+    let nick, k;
+    do { nick = 'Guest' + (10000 + crypto.randomInt(90000)); k = nick.toLowerCase(); } while (db.users[k]);
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.users[k] = { nick, salt, pw: hashPw(crypto.randomBytes(16).toString('hex'), salt), isAdmin: false, guest: true, created: Date.now(), grants: [], state: newState() };
+    normUser(db.users[k]);
+    const rk = String(b.ref || '').trim().toLowerCase(), rr = db.users[rk];
+    if (rr && rk !== k) {
+      db.users[k].refBy = rk; rr.refInvited = (rr.refInvited || 0) + 1;
+      db.users[k].grants.push({ id: rid(), type: 'coins', amount: 3, note: 'Бонус за приглашение' });
+    }
+    return login(k);
+  }
+  if (p === '/api/account/claim' && M === 'POST') {    // гость сохраняет аккаунт: ник + пароль
+    const s = need(req), u = s.u;
+    if (!u.guest) throw err('Аккаунт уже сохранён', 409);
+    if (limited(ip)) throw err('Слишком много попыток, подождите минуту', 429);
+    const nick = String(b.nick || '').trim(), k = nick.toLowerCase();
+    if (!/^[A-Za-z0-9_\-а-яА-ЯёЁ]{3,16}$/.test(nick)) throw err('Ник: 3–16 символов (буквы, цифры, _ и -)', 400);
+    if (String(b.password || '').length < 4) throw err('Пароль: минимум 4 символа', 400);
+    if (db.users[k] && k !== s.k) throw err('Этот ник уже занят', 409);
+    const salt = crypto.randomBytes(16).toString('hex');
+    u.nick = nick; u.salt = salt; u.pw = hashPw(String(b.password), salt); u.guest = false;
+    if (k !== s.k) {                                    // переносим аккаунт под новый ключ
+      db.users[k] = u; delete db.users[s.k];
+      for (const t in db.sessions) if (db.sessions[t].k === s.k) db.sessions[t].k = k;
+      for (const x of Object.values(db.users)) if (x.refBy === s.k) x.refBy = k;
+      for (const pr of Object.values(db.promos)) if (pr.users[s.k]) { delete pr.users[s.k]; pr.users[k] = 1; }
+    }
+    save(true); return profile(k, { token: s.token });
   }
   if (p === '/api/login' && M === 'POST') {
     if (limited(ip)) throw err('Слишком много попыток, подождите минуту', 429);
@@ -297,6 +342,15 @@ function route(req, p, q, b, ip) {
     const money = u.away.money * (b.double ? 2 : 1);
     u.grants.push({ id: rid(), type: 'money', amount: money, note: 'Доход, пока вас не было' });
     u.away = null; save(true); return { ok: true, grants: u.grants };
+  }
+  /* --- удаление аккаунта (требование Google Play) --- */
+  if (p === '/api/account/delete' && M === 'POST') {
+    const s = need(req);
+    if (limited(ip)) throw err('Слишком много попыток, подождите минуту', 429);
+    const ok = s.u.guest || crypto.timingSafeEqual(Buffer.from(hashPw(String(b.password || ''), s.u.salt), 'hex'), Buffer.from(s.u.pw, 'hex'));
+    if (!ok) throw err('Неверный пароль', 401);
+    for (const t in db.sessions) if (db.sessions[t].k === s.k) delete db.sessions[t];
+    delete db.users[s.k]; save(true); return { ok: true };
   }
   /* --- реферальная ссылка --- */
   if (p === '/api/ref') { const s = need(req), u = s.u; return { code: u.nick, invited: u.refInvited || 0, paid: u.refPaidN || 0, bonusNew: 3, bonusRef: 5, need: 5 }; }
@@ -366,9 +420,35 @@ const server = http.createServer((req, res) => {
     if (p === '/' || p === '/index.html') {
       return fs.readFile(path.join(__dirname, 'index.html'), (e, d) => e ? send(res, 404, 'index.html не найден', 'text/plain; charset=utf-8') : send(res, 200, d, 'text/html; charset=utf-8'));
     }
+    if (p === '/privacy' || p === '/delete-account') {
+      const mail = process.env.CONTACT_EMAIL || 'указан в карточке приложения в Google Play';
+      const css = 'body{background:#07060f;color:#e8e6ff;font:16px/1.55 system-ui,sans-serif;max-width:720px;margin:0 auto;padding:22px}h1{font-size:24px}h2{font-size:18px;margin-top:26px;color:#19f3ff}a{color:#ff5cf0}li{margin:5px 0}';
+      const head = t => '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + t + ' — Car Merge Pro</title><style>' + css + '</style></head><body>';
+      if (p === '/privacy') return send(res, 200, head('Политика конфиденциальности') + `<h1>Политика конфиденциальности Car Merge Pro</h1>
+<p>Действует с 1 ноября 2026 года. Игра Car Merge Pro («Игра») — бесплатная игра без рекламы и без покупок за реальные деньги.</p>
+<h2>Какие данные мы собираем</h2><ul>
+<li><b>Ник и пароль.</b> Вы придумываете их при регистрации. Пароль хранится только в виде необратимого хеша, мы не можем его прочитать.</li>
+<li><b>Игровой прогресс:</b> деньги, машины, достижения, задания, звёзды престижа, число слияний. Он нужен, чтобы вы могли продолжить игру на другом устройстве и чтобы работал рейтинг.</li>
+<li><b>Технические данные.</b> IP-адрес обрабатывается временно в памяти сервера для защиты от подбора паролей и не сохраняется.</li></ul>
+<h2>Что видят другие игроки</h2><p>В мировом рейтинге показываются ваш ник, уровень лучшей машины, деньги, коины и недельный счёт слияний. Не используйте в нике личные данные.</p>
+<h2>Чего мы не делаем</h2><ul><li>Не собираем email, телефон, геолокацию, контакты, фото и другие данные устройства.</li><li>Не показываем рекламу и не передаём данные рекламным сетям.</li><li>Не продаём и не передаём данные третьим лицам, кроме сервис-провайдеров, на которых работает Игра: хостинг Render и база данных Upstash.</li></ul>
+<h2>Хранение и удаление</h2><p>Данные хранятся, пока существует ваш аккаунт. Вы можете удалить аккаунт и все связанные данные в любой момент: в игре «Меню → Удалить аккаунт». Подробнее: <a href="/delete-account">как удалить аккаунт</a>.</p>
+<h2>Дети</h2><p>Игра не предназначена для детей младше 13 лет, мы сознательно не собираем их данные.</p>
+<h2>Контакты</h2><p>Вопросы о конфиденциальности: ` + mail + `.</p>
+<hr><p><small>English: Car Merge Pro stores only your nickname, a hashed password and game progress. No ads, no purchases, no tracking. You can delete your account and all data in the app (Menu → Delete account) or via the <a href="/delete-account">instructions page</a>.</small></p></body></html>`, 'text/html; charset=utf-8');
+      return send(res, 200, head('Удаление аккаунта') + `<h1>Удаление аккаунта Car Merge Pro</h1>
+<p>Вы можете удалить аккаунт и все связанные с ним данные (ник, пароль, прогресс, место в рейтинге). Это действие необратимо.</p>
+<h2>Как удалить</h2><ol><li>Откройте игру и войдите в аккаунт.</li><li>Нажмите кнопку меню в игре и выберите <b>«Удалить аккаунт»</b>.</li><li>Введите пароль и подтвердите удаление.</li></ol>
+<h2>Не можете войти?</h2><p>Напишите нам: ` + mail + `. Укажите ник, и мы удалим аккаунт вручную.</p>
+<p><a href="/privacy">Политика конфиденциальности</a></p></body></html>`, 'text/html; charset=utf-8');
+    }
+    if (p === '/.well-known/assetlinks.json') {          // связь сайта с Android-приложением (нужна для Google Play)
+      const pkg = process.env.ANDROID_PACKAGE || '', fp = (process.env.ASSETLINKS_SHA256 || '').split(',').map(x => x.trim()).filter(Boolean);
+      return send(res, 200, JSON.stringify(pkg && fp.length ? [{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: pkg, sha256_cert_fingerprints: fp } }] : []), 'application/json; charset=utf-8');
+    }
     if (p === '/manifest.webmanifest') return send(res, 200, JSON.stringify({
       name: 'Car Merge Pro', short_name: 'Car Merge', description: 'Объединяй машины и попади в мировой рейтинг',
-      start_url: '/', scope: '/', display: 'standalone', orientation: 'portrait', lang: 'ru',
+      id: '/', start_url: '/', scope: '/', display: 'standalone', categories: ['games', 'entertainment'], orientation: 'portrait', lang: 'ru',
       background_color: '#07060f', theme_color: '#07060f',
       icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
         { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' }, { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }]

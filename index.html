@@ -117,12 +117,16 @@ summary{cursor:pointer;padding:4px 0}
 #tutBox .dots{display:flex;gap:5px;margin-bottom:10px}#tutBox .dots i{width:8px;height:8px;border-radius:50%;background:#ffffff33}#tutBox .dots i.on{background:var(--cyan)}
 #tutBox .bt{display:flex;gap:8px;justify-content:space-between;align-items:center}
 #snd{font-size:15px;padding:0 8px 0 0!important;text-decoration:none!important}
+.auth .or{text-align:center;color:var(--dim);font-size:12px;margin:0 0 4px;letter-spacing:0}
 </style>
 </head>
 <body>
 
 <div class="auth" id="auth"><div class="box">
   <div class="logo">🏎️</div><h1>Car Merge Pro</h1><p>CYBERPUNK EDITION</p>
+  <button class="buy" id="aGuest" type="button" style="margin:6px 0 4px;width:100%">🎮 Играть сразу</button>
+  <p class="or">без регистрации, ник и пароль не нужны</p>
+  <p class="or" style="margin:10px 0 6px">— или войдите в аккаунт —</p>
   <div class="tabs"><button id="tLogin" class="on">Вход</button><button id="tReg">Регистрация</button></div>
   <form id="aForm" novalidate>
   <label class="fld">Ник<input id="aNick" autocomplete="username" maxlength="16" autocapitalize="off"></label>
@@ -158,6 +162,7 @@ summary{cursor:pointer;padding:4px 0}
     <button class="buy" id="buy"></button>
   </div>
   <div class="menu">
+    <button data-s="save" id="saveBtn" style="display:none"><span>💾</span><b>Сохранить аккаунт</b><small>Чтобы не потерять прогресс</small></button>
     <button data-s="prest"><span>⭐</span><b>Престиж</b><small>Начать заново с бонусом</small></button>
     <button data-s="ref"><span>👥</span><b>Пригласить друзей</b><small>Коины за каждого друга</small></button>
     <button data-s="daily"><span>🎁</span><b>Ежедневная награда</b><small>Заходите каждый день</small></button>
@@ -169,6 +174,7 @@ summary{cursor:pointer;padding:4px 0}
     <button data-s="coin"><span>💎</span><b>Магазин за коины</b><small>Премиум-улучшения и бусты</small></button>
     <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 30 моделей автопарка</small></button>
     <button data-s="upg"><span>🛒</span><b>Магазин Улучшений</b><small>Прокачивайте автопарк</small></button>
+    <button data-s="del"><span>🗑️</span><b>Удалить аккаунт</b><small>Стереть все данные навсегда</small></button>
     <button data-s="tut"><span>📘</span><b>Как играть</b><small>Короткое обучение</small></button>
     <button data-s="install" id="instBtn"><span>📲</span><b>Установить игру</b><small>Иконка на главном экране</small></button>
   </div>
@@ -314,6 +320,13 @@ function showAuth(){if(location.protocol==='file:')$('srv').style.display='block
 function setMode(m){mode=m;$('tLogin').classList.toggle('on',m==='login');$('tReg').classList.toggle('on',m==='reg');$('aGo').textContent=m==='login'?'Войти':'Создать аккаунт';$('aPass').autocomplete=m==='login'?'current-password':'new-password';$('aErr').textContent=''}
 $('tLogin').type=$('tReg').type='button';
 $('tLogin').onclick=()=>setMode('login');$('tReg').onclick=()=>setMode('reg');
+async function guestStart(){
+  $('aErr').textContent='';$('aGuest').disabled=true;
+  try{const r=await api('/api/guest','POST',{ref:localStorage.getItem('cmp_ref')||''});token=r.token;localStorage.setItem('cmp_token',token);start(r)}
+  catch(e){$('aErr').textContent=e.message}
+  $('aGuest').disabled=false;
+}
+$('aGuest').onclick=guestStart;
 async function doAuth(){
   $('aErr').textContent='';$('aGo').disabled=true;
   try{
@@ -323,7 +336,7 @@ async function doAuth(){
   $('aGo').disabled=false;
 }
 $('aForm').onsubmit=e=>{e.preventDefault();doAuth()};
-$('logout').onclick=async()=>{try{await api('/api/logout','POST',{})}catch(e){}localStorage.removeItem('cmp_token');location.reload()};
+$('logout').onclick=async()=>{if(user&&user.guest&&!confirm('Вы играете как гость. После выхода прогресс будет потерян. Выйти всё равно?'))return;try{await api('/api/logout','POST',{})}catch(e){}localStorage.removeItem('cmp_token');location.reload()};
 
 
 
@@ -392,10 +405,47 @@ function renderAway(){
   $('aw1').onclick=()=>go(false);$('aw2').onclick=()=>go(true);
 }
 
+/* ---------- сохранение гостевого аккаунта ---------- */
+function renderSave(){
+  const T=$('shT'),B=$('shB');T.textContent='💾 Сохранить аккаунт';
+  B.innerHTML=`<p class="hint">Вы играете как гость. Придумайте ник и пароль, и прогресс останется с вами: его можно будет открыть на любом устройстве.</p>
+    <label class="fld">Ник<input id="svNick" maxlength="16" autocapitalize="off" autocomplete="username"></label>
+    <label class="fld">Пароль<input id="svPass" type="password" maxlength="64" autocomplete="new-password"></label>
+    <button class="btn mag" id="svGo" style="width:100%;padding:13px">Сохранить</button><div class="err" id="svMsg"></div>`;
+  $('svGo').onclick=async()=>{
+    const m=$('svMsg');m.textContent='';$('svGo').disabled=true;
+    try{
+      await sync();
+      const r=await api('/api/account/claim','POST',{nick:$('svNick').value,password:$('svPass').value});
+      user.guest=false;user.nick=r.nick;$('nick').textContent=r.nick;$('saveBtn').style.display='none';
+      toast('✅ Аккаунт сохранён! Ваш ник: '+r.nick,true);closeSheet();
+    }catch(e){m.textContent=e.message}
+    $('svGo').disabled=false;
+  };
+}
+
+/* ---------- удаление аккаунта ---------- */
+let delArm=0;
+function renderDelete(){
+  const T=$('shT'),B=$('shB');T.textContent='🗑️ Удалить аккаунт';
+  B.innerHTML=`<p class="hint">Будут навсегда удалены ваш ник, пароль, прогресс и место в рейтинге. Отменить это нельзя.</p>
+    ${user.guest?'':'<label class="fld">Введите пароль для подтверждения<input id="delPw" type="password" autocomplete="current-password"></label>'}
+    <button class="btn mag" id="delGo" style="width:100%;padding:13px;background:linear-gradient(90deg,#ff3b5c,#c4122f)">Удалить аккаунт</button><div class="err" id="delMsg"></div>
+    <p class="hint" style="margin-top:12px"><a href="/privacy" target="_blank" style="color:var(--cyan)">Политика конфиденциальности</a></p>`;
+  $('delGo').onclick=async()=>{
+    const m=$('delMsg'),b=$('delGo');m.textContent='';
+    if(Date.now()-delArm>5000){delArm=Date.now();b.textContent='Точно удалить? Нажмите ещё раз';return}
+    delArm=0;
+    try{await api('/api/account/delete','POST',{password:$('delPw')?$('delPw').value:''});localStorage.removeItem('cmp_token');location.href='/'}
+    catch(e){m.textContent=e.message;b.textContent='Удалить аккаунт'}
+  };
+}
+
 /* ---------- реферальная ссылка ---------- */
 try{const r=new URLSearchParams(location.search).get('ref');if(r)localStorage.setItem('cmp_ref',r.slice(0,16))}catch(e){}
 async function renderRef(){
   const T=$('shT'),B=$('shB');T.textContent='👥 Пригласить друзей';B.innerHTML='<p class="hint">Загрузка…</p>';
+  if(user.guest){B.innerHTML='<p class="hint">Чтобы получить ссылку для друзей, сначала сохраните аккаунт: так у вас появится постоянный ник.</p><button class="btn mag" id="toSave" style="width:100%;padding:13px">Сохранить аккаунт</button>';$('toSave').onclick=()=>openSheet('save');return}
   try{
     const r=await api('/api/ref');if(sheet!=='ref')return;
     const link=location.origin+'/?ref='+encodeURIComponent(r.code);
@@ -588,8 +638,8 @@ async function sync(){
 /* ---------- старт ---------- */
 let started=false;
 function start(p){
-  user={nick:p.nick,isAdmin:p.isAdmin};S=p.state;S.shop=S.shop||{boost:0,car:0};ensureExtra();AWAY=p.away||null;
-  $('auth').classList.remove('show');$('app').hidden=false;$('nick').textContent=p.nick;
+  user={nick:p.nick,isAdmin:p.isAdmin,guest:!!p.guest};S=p.state;S.shop=S.shop||{boost:0,car:0};ensureExtra();AWAY=p.away||null;
+  $('auth').classList.remove('show');$('app').hidden=false;$('nick').textContent=p.nick+(p.guest?' (гость)':'');$('saveBtn').style.display=p.guest?'':'none';if(p.guest)setTimeout(()=>{if(user&&user.guest)toast('💾 Сохраните аккаунт, чтобы не потерять прогресс!',true)},5*60000);
   sel=null;renderGarage();renderStats();applyGrants(p.grants);
   if(!started){started=true;loop();setInterval(sync,4000);setInterval(updateDots,60000);requestAnimationFrame(draw)}
   updateDots();
@@ -772,7 +822,7 @@ document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>openSheet(b.datas
 function renderSheet(){
   if(!sheet||!S)return;
   const T=$('shT'),B=$('shB');
-  if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='prest'){renderPrestige()}else if(sheet==='ref'){renderRef()}else if(sheet==='away'){renderAway()}else if(sheet==='exch'){
+  if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='prest'){renderPrestige()}else if(sheet==='ref'){renderRef()}else if(sheet==='away'){renderAway()}else if(sheet==='del'){renderDelete()}else if(sheet==='save'){renderSave()}else if(sheet==='exch'){
     T.textContent='💱 Обмен валюты';
     const opts=[1,10,100].map(n=>`<div class="row"><span class="e">🪙</span><div class="t"><b>${n} коин${n===1?'':'ов'}</b><small>за $${fmt(n*RATE)}</small></div><button class="btn" data-x="${n}" ${S.money<n*RATE?'disabled':''}>Обменять</button></div>`).join('');
     const mx=Math.floor(S.money/RATE);
