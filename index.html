@@ -157,9 +157,10 @@ summary{cursor:pointer;padding:4px 0}
   </div>
   <div class="card">
     <h2>Гараж и Парковка <small style="color:var(--dim);font-family:'Exo 2';font-size:12px" id="occ"></small></h2>
-    <p class="hint">Тап по машине, затем по такой же — слияние</p>
+    <p class="hint">Тап по машине, затем по такой же — слияние. Выберите машину, чтобы продать её.</p>
     <div class="garage" id="garage"></div>
     <button class="buy" id="buy"></button>
+    <button class="btn alt" id="sell" style="display:none;width:100%;margin-top:8px;padding:12px"></button>
   </div>
   <div class="menu">
     <button data-s="save" id="saveBtn" style="display:none"><span>💾</span><b>Сохранить аккаунт</b><small>Чтобы не потерять прогресс</small></button>
@@ -340,6 +341,24 @@ $('logout').onclick=async()=>{if(user&&user.guest&&!confirm('Вы играете
 
 
 
+/* ---------- продажа машин ---------- */
+// цена продажи = 35% от стоимости покупки (с учётом уровня): продавать невыгодно как способ заработка, но можно освободить место
+const sellValue=i=>{const l=S.garage[i];if(!l)return 0;return Math.max(1,Math.floor(.35*buyCost()*Math.pow(2,l-spawnLvl())*(S.gold[i]?2:1)))};
+let sellArm=0,sellIdx=-1;
+function updateSell(){
+  const b=document.getElementById('sell');if(!b||!S)return;
+  if(typeof sel==='undefined'||sel===null||!S.garage[sel]){b.style.display='none';sellArm=0;return}
+  b.style.display='';b.textContent='💰 Продать за $'+fmt(sellValue(sel))+(S.gold[sel]?' ✨':'');
+}
+document.getElementById('sell').onclick=()=>{
+  const i=sel;if(i===null||!S.garage[i])return;
+  const v=sellValue(i),b=document.getElementById('sell');
+  if(Date.now()-sellArm>3500||sellIdx!==i){sellArm=Date.now();sellIdx=i;b.textContent='Точно продать за $'+fmt(v)+'? Нажмите ещё раз';return}
+  S.money+=v;S.garage[i]=0;S.gold[i]=false;sel=null;sellArm=0;sellIdx=-1;sfx('buy');toast('💰 Продано: +$'+fmt(v));
+  renderGarage();renderStats();
+};
+{const _rg=renderGarage;renderGarage=function(a){_rg(a);updateSell()}}
+
 /* ---------- звуки (синтез, без файлов) ---------- */
 let AC=null,SND=localStorage.getItem('cmp_snd')!=='0',AWAY=null;
 function ac(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();return AC}
@@ -462,7 +481,7 @@ async function renderRef(){
 /* ---------- обучение ---------- */
 const TUT=[
   {t:'Добро пожаловать! 🏎️',d:'Нажмите «Купить машину» — первая машина появится в гараже. Деньги нужны на новые машины.',el:'#buy'},
-  {t:'Слияние машин 🔀',d:'Нажмите на машину, потом на такую же — они объединятся в машину уровнем выше. Чем выше уровень, тем больше доход.',el:'#garage'},
+  {t:'Слияние машин 🔀',d:'Нажмите на машину, потом на такую же — они объединятся в машину уровнем выше. Чем выше уровень, тем больше доход. Ненужную машину можно продать: выберите её и нажмите «Продать».',el:'#garage'},
   {t:'Доход каждую секунду 💵',d:'Машины сами зарабатывают деньги. Даже когда вас нет в игре, они копят доход (до 8 часов).',el:'.stat.i'},
   {t:'Коины 🪙',d:'Меняйте деньги на коины в «Обмене валюты» и тратьте их на буст ×2, премиум-авто и постоянный доход.',el:'.menu [data-s="exch"]'},
   {t:'Награды каждый день 🎁',d:'Забирайте ежедневную награду, выполняйте задания, собирайте достижения и поднимайтесь в мировом рейтинге.',el:'.menu [data-s="daily"]'},
