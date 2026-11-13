@@ -11,6 +11,10 @@ const INCOME_MULT = 0.5; // должен совпадать с INCOME_MULT в in
 const SESSION_TTL = 60 * 24 * 3600 * 1000;
 const DAILY_COINS = [2, 3, 4, 5, 6, 8, 15];          // награда по дням серии (7 дней, дальше по кругу)
 const WEEK_PRIZES = [30, 20, 10];                    // коины за 1/2/3 место недели (по числу слияний)
+const LIM = 100;                                     // особая лимитированная машина (только по промокоду)
+const LIM_INCOME = 10000;                            // её доход в секунду (до множителей)
+const PROMO_LIM = 'TURBO10K';                        // встроенный промокод на лимитку
+const PROMO_LIM_MAX = 5;                             // сколько человек в мире смогут его активировать
 const GOLD_X = 3;                                    // золотая машина приносит в 3 раза больше
 const Q_IDS = ['merge', 'buy', 'upg', 'all'];        // ежедневные задания
 const A_IDS = ['m100', 'm1000', 'l10', 'l20', 'l30', 'b500', 'boost10', 'top1m', 'inc10', 'auto']; // достижения
@@ -70,6 +74,16 @@ async function load() {
   if (!db.meta.week) db.meta.week = weekId();
   for (const u of Object.values(db.users)) normUser(u);
   rollWeek();
+  if (!db.meta.limSeeded) {                              // встроенный промокод на лимитированную машину: создаётся один раз
+    db.meta.limSeeded = true;
+    if (!db.promos[PROMO_LIM]) db.promos[PROMO_LIM] = { coins: 0, money: 0, car: LIM, max: PROMO_LIM_MAX, used: 0, users: {}, created: Date.now(), exp: 0 };
+    save(true);
+  }
+  if (db.meta.limMax !== PROMO_LIM_MAX) {                // если число активаций в коде изменили — применяем к уже созданному промокоду
+    db.meta.limMax = PROMO_LIM_MAX;
+    if (db.promos[PROMO_LIM]) db.promos[PROMO_LIM].max = PROMO_LIM_MAX;
+    save(true);
+  }
 }
 
 async function flush() {
@@ -127,7 +141,7 @@ const num = (v, max = BIG) => { v = +v; return Number.isFinite(v) && v > 0 ? Mat
 const int = (v, max) => Math.floor(num(v, max));
 function cleanState(s, old, dt = 4) {
   if (!s || typeof s !== 'object') return old;
-  const garage = (Array.isArray(s.garage) ? s.garage : old.garage).slice(0, GARAGE).map(x => int(x, MAX));
+  const garage = (Array.isArray(s.garage) ? s.garage : old.garage).slice(0, GARAGE).map(x => { x = Math.floor(+x) || 0; return x === LIM ? LIM : Math.min(MAX, Math.max(0, x)); });
   while (garage.length < GARAGE) garage.push(0);
   const u = s.upg || {}, p = s.perm || {};
   const st = s.stats || {}, os = old.stats || { merges: 0, buys: 0, upgs: 0, top: 0 };
@@ -147,7 +161,7 @@ function cleanState(s, old, dt = 4) {
     perm: { mult: int(p.mult, 1000), auto: int(p.auto, 1) },
     shop: { boost: int((s.shop || {}).boost, 1000), car: int((s.shop || {}).car, 1000) },
     boostUntil: num(s.boostUntil, 8e15),
-    maxLevel: Math.max(1, int(s.maxLevel, MAX), ...garage),
+    maxLevel: Math.max(1, int(s.maxLevel, MAX), ...garage.filter(l => l <= MAX)),
     applied: (Array.isArray(s.applied) ? s.applied : []).map(String).slice(-200)
   };
 }
@@ -176,7 +190,7 @@ function rollWeek() {
 const weekScore = u => Math.max(0, u.state.stats.merges - (u.week ? u.week.base : 0));
 const income = s => {
   const m = (1 + .15 * s.upg.inc) * (1 + .25 * s.perm.mult) * (s.boostUntil > Date.now() ? 2 : 1) * (1 + .1 * ((s.prestige && s.prestige.stars) || 0));
-  return s.garage.reduce((a, l, i) => a + (l ? INCOME_MULT * Math.pow(2.3, l - 1) * (s.gold && s.gold[i] ? GOLD_X : 1) : 0), 0) * m;
+  return s.garage.reduce((a, l, i) => a + (l === LIM ? LIM_INCOME : l ? INCOME_MULT * Math.pow(2.3, l - 1) * (s.gold && s.gold[i] ? GOLD_X : 1) : 0), 0) * m;
 };
 
 const guestHits = new Map();
@@ -313,6 +327,8 @@ function route(req, p, q, b, ip) {
     const s = need(req);
     const now = Date.now(), dt = (now - (s.u.lastSync || now - 4000)) / 1000; s.u.lastSync = now;
     if (b.state) s.u.state = cleanState(b.state, s.u.state, dt);
+    { let n = 0; const allowed = s.u.limGranted || 0;     // лишние лимитки (подделка) убираем
+      s.u.state.garage = s.u.state.garage.map((l, i) => { if (l === LIM && ++n > allowed) { s.u.state.gold[i] = false; return 0; } return l; }); }
     if (s.u.refBy && !s.u.refPaid && s.u.state.maxLevel >= 5) {
       s.u.refPaid = true; const rr = db.users[s.u.refBy];
       if (rr && (rr.refPaidN || 0) < 30) { rr.refPaidN = (rr.refPaidN || 0) + 1; rr.grants.push({ id: rid(), type: 'coins', amount: 5, note: 'Друг ' + s.u.nick + ' дошёл до 5 уровня' }); }
@@ -366,7 +382,7 @@ function route(req, p, q, b, ip) {
     pr.used++; pr.users[s.k] = 1;
     if (pr.money) u.grants.push({ id: rid(), type: 'money', amount: pr.money, note: 'Промокод' });
     if (pr.coins) u.grants.push({ id: rid(), type: 'coins', amount: pr.coins, note: 'Промокод' });
-    if (pr.car) u.grants.push({ id: rid(), type: 'car', level: pr.car, note: 'Промокод' });
+    if (pr.car) { u.grants.push({ id: rid(), type: 'car', level: pr.car, note: 'Промокод' }); if (pr.car === LIM) u.limGranted = (u.limGranted || 0) + 1; }
     save(true); return { ok: true, grants: u.grants, reward: { money: pr.money, coins: pr.coins, car: pr.car } };
   }
   if (p === '/api/admin/promos') {
@@ -379,7 +395,7 @@ function route(req, p, q, b, ip) {
     if (!code) code = crypto.randomBytes(4).toString('hex').toUpperCase();
     if (!/^[A-Z0-9_-]{3,24}$/.test(code)) throw err('Код: 3–24 символа (латиница, цифры, _ и -)', 400);
     if (db.promos[code]) throw err('Такой промокод уже есть', 409);
-    const coins = num(b.coins), money = num(b.money), car = int(b.car, MAX), max = Math.min(100000, Math.max(1, int(b.max, 100000) || 1)), days = Math.min(365, int(b.days, 365));
+    const coins = num(b.coins), money = num(b.money), car = Number(b.car) === LIM ? LIM : int(b.car, MAX), max = Math.min(100000, Math.max(1, int(b.max, 100000) || 1)), days = Math.min(365, int(b.days, 365));
     if (!coins && !money && !car) throw err('Укажите награду', 400);
     db.promos[code] = { coins, money, car, max, used: 0, users: {}, created: Date.now(), exp: days ? Date.now() + days * 864e5 : 0 };
     save(true); return { ok: true, code };
@@ -396,11 +412,11 @@ function route(req, p, q, b, ip) {
   if (p === '/api/admin/grant' && M === 'POST') {
     const s = admin(req), u = db.users[String(b.nick || '').trim().toLowerCase()];
     if (!u) throw err('Игрок не найден', 404);
-    const money = num(b.money), coins = num(b.coins), car = int(b.car, MAX), cnt = Math.min(GARAGE, Math.max(1, int(b.count, GARAGE) || 1));
+    const money = num(b.money), coins = num(b.coins), car = Number(b.car) === LIM ? LIM : int(b.car, MAX), cnt = Math.min(GARAGE, Math.max(1, int(b.count, GARAGE) || 1));
     let n = 0;
     if (money) { u.grants.push({ id: rid(), type: 'money', amount: money }); n++; }
     if (coins) { u.grants.push({ id: rid(), type: 'coins', amount: coins }); n++; }
-    if (car) for (let i = 0; i < cnt; i++) { u.grants.push({ id: rid(), type: 'car', level: car }); n++; }
+    if (car) for (let i = 0; i < cnt; i++) { u.grants.push({ id: rid(), type: 'car', level: car }); n++; if (car === LIM) u.limGranted = (u.limGranted || 0) + 1; }
     if (!n) throw err('Нечего выдавать', 400);
     save(true); return { ok: true, nick: u.nick, online: u === s.u };
   }

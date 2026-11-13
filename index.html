@@ -118,6 +118,9 @@ summary{cursor:pointer;padding:4px 0}
 #tutBox .bt{display:flex;gap:8px;justify-content:space-between;align-items:center}
 #snd{font-size:15px;padding:0 8px 0 0!important;text-decoration:none!important}
 .auth .or{text-align:center;color:var(--dim);font-size:12px;margin:0 0 4px;letter-spacing:0}
+.slot.lim{border:2px solid var(--cyan)!important;box-shadow:0 0 18px #19f3ffaa,inset 0 0 14px #19f3ff55!important;background:linear-gradient(160deg,#06324a,var(--panel2));animation:limp 1.6s infinite alternate}
+.slot.lim::after{content:'LIMITED';position:absolute;top:2px;right:3px;font:700 7px/1 system-ui,sans-serif;color:#07060f;background:var(--cyan);border-radius:4px;padding:2px 3px}
+@keyframes limp{from{box-shadow:0 0 12px #19f3ff88,inset 0 0 10px #19f3ff44}to{box-shadow:0 0 22px #19f3ffdd,inset 0 0 16px #19f3ff77}}
 </style>
 </head>
 <body>
@@ -188,13 +191,14 @@ summary{cursor:pointer;padding:4px 0}
 <script>
 'use strict';
 const GARAGE=12, MAX=30;
+const LIM=100, LIM_NAME='Turbo Phantom X'; // лимитированная машина (только по промокоду), доход 10 000/с
 const INCOME_MULT=0.5; // множитель дохода машин (было 1) — меньше число = меньше доход
 const NAMES=['Neon Hatch','Street Sprout','Pixel Coupe','Volt Sedan','Chrome Rider','Pulse GT','Night Drifter','Turbo Wraith','Magenta Viper','Cyber Roadster','Plasma Racer','Quantum GT','Ion Phantom','Hyper Blade','Nova Striker','Apex Specter','Neutron R','Photon Ghost','Void Sovereign','Aurora Omega','Solar Titan','Crystal Phantom','Obsidian Fang','Eclipse Vanguard','Starlight Reaper','Chrono Drifter','Singularity X','Cosmic Leviathan','Infinity Prime','Genesis Zero'];
 const ICONS=['🚗','🚕','🚙','🚓','🚐','🛻','🚑','🚒','🚚','🏎️'];
 const ICONS2=['🚘','🚖','🚔','🚍','🚌','🚎','🚛','🚜','🛺','🏍️'];
-const icon=l=>l>20?ICONS2[(l-21)%ICONS2.length]:ICONS[(l-1)%ICONS.length];
+const icon=l=>l===LIM?'🛸':l>20?ICONS2[(l-21)%ICONS2.length]:ICONS[(l-1)%ICONS.length];
 const hue=l=>(l*37)%360;
-const color=l=>`hsl(${(l*18+300)%360} 100% 62%)`;
+const color=l=>l===LIM?'hsl(185 100% 60%)':`hsl(${(l*18+300)%360} 100% 62%)`;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -207,7 +211,7 @@ function fmt(n){
 
 /* ---------- состояние / экономика ---------- */
 let S=null,user=null,token=localStorage.getItem('cmp_token'),sel=null;
-const baseInc=l=>INCOME_MULT*Math.pow(2.3,l-1);
+const baseInc=l=>l===LIM?10000:INCOME_MULT*Math.pow(2.3,l-1);
 const boostLeft=()=>Math.max(0,Math.ceil((S.boostUntil-Date.now())/1000));
 const prestMult=()=>1+.1*(S.prestige?S.prestige.stars:0);
 const mult=()=>(1+.15*S.upg.inc)*(1+.25*S.perm.mult)*(boostLeft()>0?2:1)*prestMult();
@@ -343,15 +347,15 @@ $('logout').onclick=async()=>{if(user&&user.guest&&!confirm('Вы играете
 
 /* ---------- продажа машин ---------- */
 // цена продажи = 35% от стоимости покупки (с учётом уровня): продавать невыгодно как способ заработка, но можно освободить место
-const sellValue=i=>{const l=S.garage[i];if(!l)return 0;return Math.max(1,Math.floor(.35*buyCost()*Math.pow(2,l-spawnLvl())*(S.gold[i]?2:1)))};
+const sellValue=i=>{const l=S.garage[i];if(!l||l===LIM)return 0;return Math.max(1,Math.floor(.35*buyCost()*Math.pow(2,l-spawnLvl())*(S.gold[i]?2:1)))};
 let sellArm=0,sellIdx=-1;
 function updateSell(){
   const b=document.getElementById('sell');if(!b||!S)return;
-  if(typeof sel==='undefined'||sel===null||!S.garage[sel]){b.style.display='none';sellArm=0;return}
+  if(typeof sel==='undefined'||sel===null||!S.garage[sel]||S.garage[sel]===LIM){b.style.display='none';sellArm=0;return}
   b.style.display='';b.textContent='💰 Продать за $'+fmt(sellValue(sel))+(S.gold[sel]?' ✨':'');
 }
 document.getElementById('sell').onclick=()=>{
-  const i=sel;if(i===null||!S.garage[i])return;
+  const i=sel;if(i===null||!S.garage[i]||S.garage[i]===LIM)return;
   const v=sellValue(i),b=document.getElementById('sell');
   if(Date.now()-sellArm>3500||sellIdx!==i){sellArm=Date.now();sellIdx=i;b.textContent='Точно продать за $'+fmt(v)+'? Нажмите ещё раз';return}
   S.money+=v;S.garage[i]=0;S.gold[i]=false;sel=null;sellArm=0;sellIdx=-1;sfx('buy');toast('💰 Продано: +$'+fmt(v));
@@ -378,7 +382,7 @@ sndIcon();
 
 /* ---------- золотые машины / престиж ---------- */
 const PREST_MIN=15;
-const garageMax=()=>Math.max(0,...S.garage);
+const garageMax=()=>Math.max(0,...S.garage.filter(l=>l<=MAX));
 const prestGain=()=>garageMax()>=PREST_MIN?garageMax()-PREST_MIN+1:0;
 let prestArm=0;
 function renderPrestige(){
@@ -398,7 +402,8 @@ function renderPrestige(){
 function doPrestige(){
   const g=prestGain();if(!g)return;
   S.prestige.stars+=g;S.prestige.runs++;
-  S.money=100;S.garage=Array(GARAGE).fill(0);S.garage[0]=1;S.gold=Array(GARAGE).fill(false);
+  const lims=S.garage.filter(l=>l===LIM).length;
+  S.money=100;S.garage=Array(GARAGE).fill(0);S.garage[0]=1;S.gold=Array(GARAGE).fill(false);for(let k=0;k<lims&&k<GARAGE-1;k++)S.garage[k+1]=LIM;
   S.bought=0;S.upg={inc:0,spawn:0,cheap:0};S.boostUntil=0;sel=null;
   sfx('prestige');toast('⭐ Престиж! +'+g+' ⭐ · доход +'+S.prestige.stars*10+'%',true);
   sync();renderGarage();renderStats();updateDots();renderSheet();
@@ -640,7 +645,7 @@ function applyGrants(list){
     else if(g.type==='coins'){S.coins+=g.amount;msgs.push('+'+fmt(g.amount)+' 🪙')}
     else if(g.type==='car'){
       const f=freeSlot();if(f<0)continue; // нет места — применим позже
-      S.garage[f]=g.level;S.gold[f]=false;S.maxLevel=Math.max(S.maxLevel,g.level);msgs.push(icon(g.level)+' '+NAMES[g.level-1]);
+      S.garage[f]=g.level;S.gold[f]=false;if(g.level<=MAX)S.maxLevel=Math.max(S.maxLevel,g.level);msgs.push(icon(g.level)+' '+(g.level===LIM?LIM_NAME+' (лимитка!)':NAMES[g.level-1]));
     }else continue;
     if(g.note)notes.add(g.note);
     S.applied.push(g.id);
@@ -732,10 +737,10 @@ function renderGarage(pop){
   const g=$('garage');g.innerHTML='';
   S.garage.forEach((l,i)=>{
     const d=document.createElement('button');
-    d.className='slot'+(l?' car':'')+(l&&S.gold[i]?' gold':'')+(sel===i?' sel':'')+(pop===i?' pop':'');
+    d.className='slot'+(l?' car':'')+(l===LIM?' lim':'')+(l&&S.gold[i]?' gold':'')+(sel===i?' sel':'')+(pop===i?' pop':'');
     if(l){
       d.style.setProperty('--c',color(l));d.style.setProperty('--h',hue(l)+'deg');
-      d.innerHTML=`<span class="ic">${icon(l)}</span><span class="lv">${l}</span><span class="ps">$${fmt(baseInc(l)*mult()*(S.gold[i]?GOLD_X:1))}/с</span>`;
+      d.innerHTML=`<span class="ic">${icon(l)}</span><span class="lv">${l===LIM?"★":l}</span><span class="ps">$${fmt(baseInc(l)*mult()*(S.gold[i]?GOLD_X:1))}/с</span>`;
     }
     d.onclick=()=>tapSlot(i);g.appendChild(d);
   });
@@ -791,7 +796,7 @@ function draw(ts){
   cx.shadowBlur=0;cx.fillStyle='#8a82b3';cx.font="10px 'Exo 2',sans-serif";cx.fillText(boost?'x2 в секунду':'в секунду',c,c+17);
   S.garage.forEach((l,i)=>{
     if(!l)return;
-    pos[i]=(pos[i]??i/GARAGE)+(0.03+l*0.012)*b*dt;
+    pos[i]=(pos[i]??i/GARAGE)+(0.03+Math.min(l,MAX)*0.012)*b*dt;
     const R=LR[i%3],col=color(l);
     const at=t=>{const a=t*Math.PI*2-Math.PI/2;return[c+Math.cos(a)*R,c+Math.sin(a)*R,a]};
     for(let k=7;k>=1;k--){const q=at(pos[i]-k*(boost?.007:.004));cx.globalAlpha=.5*(1-k/8);cx.fillStyle=col;cx.shadowColor=col;cx.shadowBlur=8;cx.beginPath();cx.arc(q[0],q[1],5-k*.4,0,7);cx.fill()}
@@ -820,7 +825,7 @@ function drawOld(ts){
   const b=boostLeft()>0?2:1,dt=.016;
   S.garage.forEach((l,i)=>{
     if(!l)return;
-    pos[i]=((pos[i]??i/GARAGE)+(0.03+l*0.012)*b*dt);
+    pos[i]=((pos[i]??i/GARAGE)+(0.03+Math.min(l,MAX)*0.012)*b*dt);
     const p=stadium(pos[i],W,H,pad);
     cx.save();cx.translate(p.x,p.y+(i%2?7:-7)*0);cx.rotate(p.a);
     cx.shadowColor=color(l);cx.shadowBlur=14;cx.fillStyle=color(l);
@@ -892,6 +897,7 @@ function renderAdmin(){
     adminBuilt=true;
     let opts='<option value="0">— без машины —</option>';
     for(let l=1;l<=MAX;l++)opts+=`<option value="${l}">${icon(l)} ${l}. ${NAMES[l-1]}</option>`;
+    opts+=`<option value="${LIM}">🛸 Лимитка: ${LIM_NAME} (10K/с)</option>`;
     $('shB').innerHTML=`
       <p class="hint">Выдача работает глобально: подарок придёт игроку в течение ~4 сек, даже если он зайдёт позже.</p>
       <label class="fld">Ник игрока<input id="gNick" autocapitalize="off" autocomplete="off"></label>
