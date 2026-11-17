@@ -121,6 +121,15 @@ summary{cursor:pointer;padding:4px 0}
 .slot.lim{border:2px solid var(--cyan)!important;box-shadow:0 0 18px #19f3ffaa,inset 0 0 14px #19f3ff55!important;background:linear-gradient(160deg,#06324a,var(--panel2));animation:limp 1.6s infinite alternate}
 .slot.lim::after{content:'LIMITED';position:absolute;top:2px;right:3px;font:700 7px/1 system-ui,sans-serif;color:#07060f;background:var(--cyan);border-radius:4px;padding:2px 3px}
 @keyframes limp{from{box-shadow:0 0 12px #19f3ff88,inset 0 0 10px #19f3ff44}to{box-shadow:0 0 22px #19f3ffdd,inset 0 0 16px #19f3ff77}}
+#menuTpl{display:none}
+.app{padding-bottom:110px}
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:10px;max-width:480px;margin:0 auto;padding:22px 12px calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(180deg,transparent,#07060f 42%);pointer-events:none}
+.dock button{pointer-events:auto}
+.dock .buy{flex:1;margin:0;width:auto;min-width:0;padding:14px 8px;font-size:14px}
+.menu-fab{position:relative;flex:0 0 auto;padding:14px 16px;border-radius:16px;background:var(--panel2);border:1px solid var(--cyan);color:#fff;font-family:'Russo One',sans-serif;font-size:15px;box-shadow:0 0 16px #19f3ff44;display:flex;align-items:center;gap:8px}
+.menu-fab span{font-size:19px}
+.menu-fab i{position:absolute;top:-5px;right:-3px;width:16px;height:16px;border-radius:50%;background:#ff3b5c;border:2px solid #07060f}
+.menu-fab i[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -165,27 +174,28 @@ summary{cursor:pointer;padding:4px 0}
     <button class="buy" id="buy"></button>
     <button class="btn alt" id="sell" style="display:none;width:100%;margin-top:8px;padding:12px"></button>
   </div>
-  <div class="menu">
+  <div class="menu" id="menuTpl">
     <button data-s="save" id="saveBtn" style="display:none"><span>💾</span><b>Сохранить аккаунт</b><small>Чтобы не потерять прогресс</small></button>
-    <button data-s="prest"><span>⭐</span><b>Престиж</b><small>Начать заново с бонусом</small></button>
-    <button data-s="ref"><span>👥</span><b>Пригласить друзей</b><small>Коины за каждого друга</small></button>
     <button data-s="daily"><span>🎁</span><b>Ежедневная награда</b><small>Заходите каждый день</small></button>
     <button data-s="quest"><span>📋</span><b>Задания дня</b><small>Награда в коинах</small></button>
-    <button data-s="ach"><span>🏅</span><b>Достижения</b><small>Постоянные цели</small></button>
-    <button data-s="promo"><span>🎟️</span><b>Промокод</b><small>Введите код и получите приз</small></button>
     <button data-s="lb"><span>🏆</span><b>Мировой рейтинг</b><small>Топ игроков по всему миру</small></button>
-    <button data-s="exch"><span>💱</span><b>Обмен валюты</b><small>Получайте коины за доллары</small></button>
-    <button data-s="coin"><span>💎</span><b>Магазин за коины</b><small>Премиум-улучшения и бусты</small></button>
-    <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 30 моделей автопарка</small></button>
+    <button data-s="ach"><span>🏅</span><b>Достижения</b><small>Постоянные цели</small></button>
     <button data-s="upg"><span>🛒</span><b>Магазин Улучшений</b><small>Прокачивайте автопарк</small></button>
-    <button data-s="del"><span>🗑️</span><b>Удалить аккаунт</b><small>Стереть все данные навсегда</small></button>
+    <button data-s="coin"><span>💎</span><b>Магазин за коины</b><small>Премиум-улучшения и бусты</small></button>
+    <button data-s="exch"><span>💱</span><b>Обмен валюты</b><small>Получайте коины за доллары</small></button>
+    <button data-s="prest"><span>⭐</span><b>Престиж</b><small>Начать заново с бонусом</small></button>
+    <button data-s="promo"><span>🎟️</span><b>Промокод</b><small>Введите код и получите приз</small></button>
+    <button data-s="ref"><span>👥</span><b>Пригласить друзей</b><small>Коины за каждого друга</small></button>
+    <button data-s="idx"><span>📖</span><b>Индекс Автомобилей</b><small>Все 30 моделей автопарка</small></button>
     <button data-s="tut"><span>📘</span><b>Как играть</b><small>Короткое обучение</small></button>
     <button data-s="install" id="instBtn"><span>📲</span><b>Установить игру</b><small>Иконка на главном экране</small></button>
+    <button data-s="del"><span>🗑️</span><b>Удалить аккаунт</b><small>Стереть все данные навсегда</small></button>
   </div>
   <button class="reset" id="reset">Сбросить прогресс</button>
 </div>
 
-<div class="ov" id="ov"><div class="sheet"><div class="top"><h3 id="shT"></h3><button class="x" id="shX">✕</button></div><div id="shB"></div></div></div>
+<div class="dock" id="dock"><button class="buy" id="buyDock" type="button"></button><button class="menu-fab" id="menuBtn" type="button"><span>☰</span> Меню<i id="menuDot" hidden></i></button></div>
+<div class="ov" id="ov"><div class="sheet"><div class="top"><div style="display:flex;align-items:center;gap:10px;min-width:0"><button class="x" id="shBack" style="display:none" aria-label="Назад">‹</button><h3 id="shT"></h3></div><button class="x" id="shX">✕</button></div><div id="shB"></div></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -488,9 +498,9 @@ const TUT=[
   {t:'Добро пожаловать! 🏎️',d:'Нажмите «Купить машину» — первая машина появится в гараже. Деньги нужны на новые машины.',el:'#buy'},
   {t:'Слияние машин 🔀',d:'Нажмите на машину, потом на такую же — они объединятся в машину уровнем выше. Чем выше уровень, тем больше доход. Ненужную машину можно продать: выберите её и нажмите «Продать».',el:'#garage'},
   {t:'Доход каждую секунду 💵',d:'Машины сами зарабатывают деньги. Даже когда вас нет в игре, они копят доход (до 8 часов).',el:'.stat.i'},
-  {t:'Коины 🪙',d:'Меняйте деньги на коины в «Обмене валюты» и тратьте их на буст ×2, премиум-авто и постоянный доход.',el:'.menu [data-s="exch"]'},
-  {t:'Награды каждый день 🎁',d:'Забирайте ежедневную награду, выполняйте задания, собирайте достижения и поднимайтесь в мировом рейтинге.',el:'.menu [data-s="daily"]'},
-  {t:'Золото и престиж ⭐',d:'Иногда при покупке выпадает золотая машина — она приносит доход ×3. Дойдёте до 15 уровня — можно начать заново с бонусом дохода.',el:'.menu [data-s="prest"]'}
+  {t:'Коины 🪙',d:'Откройте «Меню» → «Обмен валюты»: меняйте деньги на коины и тратьте их на буст ×2, премиум-авто и постоянный доход.',el:'#menuBtn'},
+  {t:'Награды каждый день 🎁',d:'В «Меню» — ежедневная награда, задания, достижения и мировой рейтинг. Красная точка значит, что есть награда.',el:'#menuBtn'},
+  {t:'Золото и престиж ⭐',d:'Иногда при покупке выпадает золотая машина — она приносит доход ×3. Дойдёте до 15 уровня — в «Меню» откроется «Престиж»: начать заново с бонусом дохода.',el:'#menuBtn'}
 ];
 let tutI=-1;
 function tutClear(){document.querySelectorAll('.tut-hl').forEach(e=>e.classList.remove('tut-hl'));['tutBox','tutBg'].forEach(i=>{const e=document.getElementById(i);if(e)e.remove()})}
@@ -622,8 +632,11 @@ function renderPromo(){
 }
 
 /* ---------- метки «есть награда» в меню ---------- */
-function setNote(k,txt){
-  const el=document.querySelector('.menu [data-s="'+k+'"] small');if(!el)return;
+const NOTES={};
+function setNote(k,txt,flag){
+  NOTES[k]=flag===undefined?!!txt:!!flag;
+  const d=document.getElementById('menuDot');if(d)d.hidden=!Object.values(NOTES).some(Boolean);
+  const el=document.querySelector('#menuTpl [data-s="'+k+'"] small');if(!el)return;
   el.dataset.def=el.dataset.def||el.textContent;
   el.textContent=txt||el.dataset.def;el.classList.toggle('new',!!txt);
 }
@@ -631,7 +644,7 @@ async function updateDots(){
   if(!S)return;checkDay();
   setNote('quest',(QUESTS.some(q=>S.quests.p[q.id]>=q.t&&!S.quests.c[q.id])||(QUESTS.every(q=>S.quests.c[q.id])&&!S.quests.c.all))?'🔴 Есть награда!':'');
   setNote('ach',ACH.some(a=>!S.ach[a.id]&&a.v()>=a.t)?'🔴 Есть награда!':'');
-  try{const r=await api('/api/daily');setNote('daily',r.can?'🔴 Награда готова!':'Следующая через '+hm(r.left))}catch(e){}
+  try{const r=await api('/api/daily');setNote('daily',r.can?'🔴 Награда готова!':'Следующая через '+hm(r.left),r.can)}catch(e){}
 }
 async function lbAdminPlaceholder(){}
 
@@ -838,15 +851,27 @@ function drawOld(ts){
 
 /* ---------- шторка / магазины ---------- */
 let sheet=null;
-function openSheet(k){if(k==='tut'){startTut();return}sheet=k;$('ov').classList.add('show');renderSheet()}
-function closeSheet(){sheet=null;$('ov').classList.remove('show')}
+let FROM_MENU=false;
+function openSheet(k){if(k==='tut'){closeSheet();startTut();return}sheet=k;$('ov').classList.add('show');renderSheet()}
+function closeSheet(){sheet=null;FROM_MENU=false;$('ov').classList.remove('show')}
+function renderMenu(){
+  const T=$('shT'),B=$('shB');T.textContent='☰ Меню';
+  B.innerHTML='<div class="menu">'+document.getElementById('menuTpl').innerHTML+'</div>';
+  B.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
+  B.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{FROM_MENU=true;openSheet(b.dataset.s)});
+}
+{const _rs=renderSheet;renderSheet=function(){_rs();$('shBack').style.display=(FROM_MENU&&sheet&&sheet!=='menu')?'':'none'}}
+$('shBack').onclick=()=>{FROM_MENU=false;openSheet('menu')};
+$('menuBtn').onclick=()=>{FROM_MENU=false;openSheet('menu')};
+$('buyDock').onclick=()=>$('buy').click();
+setInterval(()=>{const b=$('buy'),d=$('buyDock');if(b&&d){d.textContent=b.textContent;d.disabled=b.disabled;d.className=b.className}},250);
 $('shX').onclick=closeSheet;$('ov').onclick=e=>{if(e.target.id==='ov')closeSheet()};
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>openSheet(b.dataset.s));
 
 function renderSheet(){
   if(!sheet||!S)return;
   const T=$('shT'),B=$('shB');
-  if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='prest'){renderPrestige()}else if(sheet==='ref'){renderRef()}else if(sheet==='away'){renderAway()}else if(sheet==='del'){renderDelete()}else if(sheet==='save'){renderSave()}else if(sheet==='exch'){
+  if(sheet==='menu'){renderMenu()}else if(sheet==='lb'){renderLB()}else if(sheet==='daily'){renderDaily()}else if(sheet==='quest'){renderQuests()}else if(sheet==='ach'){renderAch()}else if(sheet==='promo'){renderPromo()}else if(sheet==='install'){renderInstall()}else if(sheet==='prest'){renderPrestige()}else if(sheet==='ref'){renderRef()}else if(sheet==='away'){renderAway()}else if(sheet==='del'){renderDelete()}else if(sheet==='save'){renderSave()}else if(sheet==='exch'){
     T.textContent='💱 Обмен валюты';
     const opts=[1,10,100].map(n=>`<div class="row"><span class="e">🪙</span><div class="t"><b>${n} коин${n===1?'':'ов'}</b><small>за $${fmt(n*RATE)}</small></div><button class="btn" data-x="${n}" ${S.money<n*RATE?'disabled':''}>Обменять</button></div>`).join('');
     const mx=Math.floor(S.money/RATE);
